@@ -1,0 +1,20 @@
+# Railway uses Nixpacks by default. Pin Node 20 so the build doesn't pick
+# whatever the daily image happens to ship. Next 15 + React 19 work with
+# 18.18+, but Drizzle Kit and some transitive deps prefer 20+ in 2026.
+[phases.setup]
+nixPkgs = ["nodejs_20"]
+
+[phases.install]
+cmds = ["npm ci --prefer-offline --no-audit --no-fund"]
+
+[phases.build]
+# Apply migrations against the production DB before building. Drizzle's
+# migrator is idempotent — it tracks applied migrations in a
+# __drizzle_migrations table, so re-deploys without schema changes are no-ops.
+cmds = [
+  "npm run db:migrate",
+  "npm run build",
+]
+
+[start]
+cmd = "npm run start"

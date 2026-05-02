@@ -36,6 +36,20 @@ npm run db:migrate
 
 4. Replace the calls in `src/app/actions.ts` with Drizzle queries against `src/db/schema.ts`. The in-memory store and the schema are intentionally shaped the same way to make this swap mechanical.
 
+## Deploy to Railway
+
+1. Sign up at https://railway.com with GitHub.
+2. **New Project → Add Postgres** (provisions in seconds).
+3. **+ New → GitHub Repo → DailyQuest** in the same project.
+4. In the web service's **Variables** tab, add:
+   - `DATABASE_URL` = `${{Postgres.DATABASE_URL}}` (Railway resolves the reference)
+   - `AUTH_SECRET` = a fresh 64-char hex (`node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`)
+   - `NODE_ENV` = `production`
+5. **Settings → Networking → Generate Domain**.
+6. Push to `main` → Railway runs `npm run db:migrate && npm run build`, then `npm run start`. Migrations are idempotent.
+
+Nixpacks pins Node 20 ([nixpacks.toml](nixpacks.toml)) and `railway.json` sets the healthcheck path. The DB client at [src/db/client.ts](src/db/client.ts) auto-enables TLS in production / for non-localhost hosts, which Railway requires.
+
 ## What's next (per the roadmap)
 
 - Week 1 ✅ Today screen, tasks CRUD, points, streak, level
