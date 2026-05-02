@@ -44,6 +44,10 @@ export async function middleware(req: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|robots.txt|.*\\.(?:png|jpg|jpeg|gif|svg|webp|ico|css|js)).*)",
+    // Skip middleware on Next.js internals, static assets, and the
+    // metadata routes Next auto-serves (icon, apple-icon, opengraph-image,
+    // sitemap, robots, manifest). Browsers fetch /icon without our auth
+    // cookie, so middleware must let it through or favicons 307 to /signin.
+    "/((?!_next/static|_next/image|favicon\\.ico|robots\\.txt|sitemap\\.xml|manifest\\.webmanifest|icon|apple-icon|opengraph-image|twitter-image|.*\\.(?:png|jpg|jpeg|gif|svg|webp|ico|css|js)).*)",
   ],
 };
