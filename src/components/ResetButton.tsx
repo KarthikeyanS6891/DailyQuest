@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { resetUserAction } from "@/app/profile/actions";
+import { resetUserAction } from "@/app/(app)/profile/actions";
 import { cn } from "@/lib/cn";
 
 export function ResetButton() {

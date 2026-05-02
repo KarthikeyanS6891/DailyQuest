@@ -1,10 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { z } from "zod";
 import { resetUser, updateSettings } from "@/store/memory";
-
-const userId = process.env.DEV_USER_ID ?? "dev-user";
+import { clearSessionCookie, requireUser } from "@/lib/auth";
 
 const SettingsInput = z.object({
   timezone: z.string().min(1).max(64).optional(),
@@ -14,6 +14,7 @@ const SettingsInput = z.object({
 });
 
 export async function updateSettingsAction(formData: FormData) {
+  const { id: userId } = await requireUser();
   const parsed = SettingsInput.safeParse({
     timezone: formData.get("timezone") || undefined,
     quietHoursStart: formData.get("quietHoursStart") || undefined,
@@ -21,17 +22,23 @@ export async function updateSettingsAction(formData: FormData) {
     notifications: formData.get("notifications") === "on",
   });
   if (!parsed.success) return { ok: false };
-  updateSettings(userId, parsed.data);
+  await updateSettings(userId, parsed.data);
   revalidatePath("/profile");
   return { ok: true };
 }
 
 export async function resetUserAction() {
-  resetUser(userId);
+  const { id: userId } = await requireUser();
+  await resetUser(userId);
   revalidatePath("/");
   revalidatePath("/habits");
   revalidatePath("/rewards");
   revalidatePath("/analytics");
   revalidatePath("/profile");
   return { ok: true };
+}
+
+export async function signOutAction() {
+  await clearSessionCookie();
+  redirect("/signin");
 }

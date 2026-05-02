@@ -2,7 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import { Plus } from "lucide-react";
-import { addHabitAction } from "@/app/habits/actions";
+import { addHabitAction } from "@/app/(app)/habits/actions";
 import { cn } from "@/lib/cn";
 
 export function AddHabitForm() {

@@ -8,9 +8,8 @@ import {
   deleteTask,
   uncompleteTask,
 } from "@/store/memory";
+import { requireUser } from "@/lib/auth";
 import type { Priority } from "@/lib/points";
-
-const userId = process.env.DEV_USER_ID ?? "dev-user";
 
 const CreateInput = z.object({
   title: z.string().min(1).max(200),
@@ -20,6 +19,7 @@ const CreateInput = z.object({
 });
 
 export async function addTaskAction(formData: FormData) {
+  const { id: userId } = await requireUser();
   const parsed = CreateInput.safeParse({
     title: formData.get("title"),
     priority: formData.get("priority"),
@@ -35,7 +35,7 @@ export async function addTaskAction(formData: FormData) {
     d.setHours(h, m, 0, 0);
     scheduledFor = d.toISOString();
   }
-  createTask(userId, {
+  await createTask(userId, {
     title,
     priority: priority as Priority,
     estimatedMinutes,
@@ -47,7 +47,8 @@ export async function addTaskAction(formData: FormData) {
 }
 
 export async function completeTaskAction(taskId: string) {
-  const result = completeTask(userId, taskId);
+  const { id: userId } = await requireUser();
+  const result = await completeTask(userId, taskId);
   revalidatePath("/");
   revalidatePath("/rewards");
   revalidatePath("/analytics");
@@ -55,7 +56,8 @@ export async function completeTaskAction(taskId: string) {
 }
 
 export async function uncompleteTaskAction(taskId: string) {
-  uncompleteTask(userId, taskId);
+  const { id: userId } = await requireUser();
+  await uncompleteTask(userId, taskId);
   revalidatePath("/");
   revalidatePath("/rewards");
   revalidatePath("/analytics");
@@ -63,7 +65,8 @@ export async function uncompleteTaskAction(taskId: string) {
 }
 
 export async function deleteTaskAction(taskId: string) {
-  deleteTask(userId, taskId);
+  const { id: userId } = await requireUser();
+  await deleteTask(userId, taskId);
   revalidatePath("/");
   revalidatePath("/analytics");
   return { ok: true };

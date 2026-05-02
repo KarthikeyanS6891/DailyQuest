@@ -10,3 +10,4 @@ out/
 .data/
 .vscode/
 *.tsbuildinfo
+.playwright-mcp/

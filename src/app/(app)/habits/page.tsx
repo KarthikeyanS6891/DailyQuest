@@ -2,12 +2,13 @@ import { Repeat } from "lucide-react";
 import { getHabits } from "@/store/memory";
 import { HabitItem } from "@/components/HabitItem";
 import { AddHabitForm } from "@/components/AddHabitForm";
+import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-export default function HabitsPage() {
-  const userId = process.env.DEV_USER_ID ?? "dev-user";
-  const { habits } = getHabits(userId);
+export default async function HabitsPage() {
+  const { id: userId } = await requireUser();
+  const { habits } = await getHabits(userId);
 
   const dueToday = habits.filter((h) => h.dueToday);
   const completedToday = dueToday.filter((h) => h.completedToday).length;

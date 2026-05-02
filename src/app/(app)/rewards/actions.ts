@@ -2,12 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 import { redeemReward } from "@/store/memory";
-
-const userId = process.env.DEV_USER_ID ?? "dev-user";
+import { requireUser } from "@/lib/auth";
 
 export async function redeemAction(rewardId: string) {
-  const result = redeemReward(userId, rewardId);
+  const { id: userId } = await requireUser();
+  const result = await redeemReward(userId, rewardId);
   revalidatePath("/rewards");
   revalidatePath("/");
+  revalidatePath("/profile");
   return result;
 }

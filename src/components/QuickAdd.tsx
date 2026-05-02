@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Sparkles, Zap, Clock, Flag, ArrowRight } from "lucide-react";
-import { addTaskAction } from "@/app/actions";
+import { addTaskAction } from "@/app/(app)/actions";
 import { parseQuickAdd } from "@/lib/parseQuickAdd";
 import { pointsFor, type Priority } from "@/lib/points";
 import { cn } from "@/lib/cn";

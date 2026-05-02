@@ -2,12 +2,13 @@ import { Lightbulb, Target, Trophy } from "lucide-react";
 import { getAnalytics } from "@/store/memory";
 import { Heatmap } from "@/components/Heatmap";
 import { HourHistogram } from "@/components/HourHistogram";
+import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-export default function AnalyticsPage() {
-  const userId = process.env.DEV_USER_ID ?? "dev-user";
-  const a = getAnalytics(userId);
+export default async function AnalyticsPage() {
+  const { id: userId } = await requireUser();
+  const a = await getAnalytics(userId);
 
   const weekdayShort = ["S", "M", "T", "W", "T", "F", "S"];
 

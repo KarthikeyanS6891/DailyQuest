@@ -7,7 +7,7 @@ import {
   completeTaskAction,
   deleteTaskAction,
   uncompleteTaskAction,
-} from "@/app/actions";
+} from "@/app/(app)/actions";
 import { Confetti } from "./Confetti";
 import { cn } from "@/lib/cn";
 import { pointsFor, type Priority } from "@/lib/points";

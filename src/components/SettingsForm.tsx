@@ -1,7 +1,7 @@
 "use client";
 
 import { useTransition } from "react";
-import { updateSettingsAction } from "@/app/profile/actions";
+import { updateSettingsAction } from "@/app/(app)/profile/actions";
 import { cn } from "@/lib/cn";
 
 type Settings = {

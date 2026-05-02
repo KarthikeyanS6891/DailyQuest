@@ -7,7 +7,7 @@ import {
   toggleHabitAction,
   deleteHabitAction,
   freezeHabitAction,
-} from "@/app/habits/actions";
+} from "@/app/(app)/habits/actions";
 import { Confetti } from "./Confetti";
 import { cn } from "@/lib/cn";
 

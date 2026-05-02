@@ -1,7 +1,16 @@
-import fs from "node:fs";
-import path from "node:path";
-import { nanoid } from "nanoid";
+import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
+import { db } from "@/db/client";
+import {
+  habitCompletions,
+  habits as habitsT,
+  redemptions as redemptionsT,
+  rewardLedger,
+  tasks as tasksT,
+  users,
+} from "@/db/schema";
 import { pointsFor, type Priority } from "@/lib/points";
+
+// ---------- Public types (shape preserved for the existing UI) ----------
 
 export type Task = {
   id: string;
@@ -24,14 +33,6 @@ export type Habit = {
   freezesRemaining: number;
   freezesResetMonth: string;
   active: boolean;
-  createdAt: string;
-};
-
-export type HabitCompletion = {
-  id: string;
-  habitId: string;
-  date: string;
-  effortPct: number;
   createdAt: string;
 };
 
@@ -70,61 +71,10 @@ export type Settings = {
   notifications: boolean;
 };
 
-type UserState = {
-  tasks: Task[];
-  habits: Habit[];
-  habitCompletions: HabitCompletion[];
-  ledger: LedgerEntry[];
-  redemptions: Redemption[];
-  xp: number;
-  streak: number;
-  lastCompletionDate: string | null;
-  settings: Settings;
-};
-
-declare global {
-  // eslint-disable-next-line no-var
-  var __dq_store: Map<string, UserState> | undefined;
-}
-
-const DATA_DIR = path.join(process.cwd(), ".data");
-const DATA_FILE = path.join(DATA_DIR, "store.json");
-
-function ensureLoaded(): Map<string, UserState> {
-  if (globalThis.__dq_store) return globalThis.__dq_store;
-  const map = new Map<string, UserState>();
-  try {
-    if (fs.existsSync(DATA_FILE)) {
-      const raw = JSON.parse(fs.readFileSync(DATA_FILE, "utf8")) as Record<string, UserState>;
-      for (const [k, v] of Object.entries(raw)) map.set(k, v);
-    }
-  } catch {
-    /* ignore corrupt store */
-  }
-  globalThis.__dq_store = map;
-  return map;
-}
-
-let writeTimer: NodeJS.Timeout | null = null;
-function persist() {
-  if (writeTimer) clearTimeout(writeTimer);
-  writeTimer = setTimeout(() => {
-    try {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-      const obj: Record<string, UserState> = {};
-      for (const [k, v] of ensureLoaded()) obj[k] = v;
-      fs.writeFileSync(DATA_FILE, JSON.stringify(obj, null, 2), "utf8");
-    } catch {
-      /* ignore */
-    }
-  }, 50);
-}
-
-const store = ensureLoaded();
+// ---------- Helpers ----------
 
 function todayIso() {
-  const d = new Date();
-  return d.toISOString().slice(0, 10);
+  return new Date().toISOString().slice(0, 10);
 }
 function monthIso() {
   const d = new Date();
@@ -138,362 +88,11 @@ function isoDateNDaysAgo(n: number) {
 function dayIndex(iso: string) {
   return new Date(iso + "T00:00:00").getDay();
 }
-
-function ensureUser(userId: string): UserState {
-  let s = store.get(userId);
-  if (!s) {
-    s = seed();
-    store.set(userId, s);
-    persist();
-  }
-  return s;
+function asIso(d: Date | null | undefined): string | null {
+  return d ? new Date(d).toISOString() : null;
 }
 
-function seed(): UserState {
-  const now = new Date();
-  const at = (h: number, m = 0) => {
-    const d = new Date(now);
-    d.setHours(h, m, 0, 0);
-    return d.toISOString();
-  };
-  const t = (
-    title: string,
-    priority: Priority,
-    estimatedMinutes: number,
-    scheduledFor: string | null,
-  ): Task => ({
-    id: nanoid(),
-    title,
-    priority,
-    estimatedMinutes,
-    scheduledFor,
-    status: "pending",
-    completedAt: null,
-    pointsAwarded: 0,
-    createdAt: new Date().toISOString(),
-  });
-  const h = (title: string, cadence: Habit["cadence"]): Habit => ({
-    id: nanoid(),
-    title,
-    cadence,
-    currentStreak: 0,
-    longestStreak: 0,
-    freezesRemaining: 2,
-    freezesResetMonth: monthIso(),
-    active: true,
-    createdAt: new Date().toISOString(),
-  });
-  return {
-    tasks: [
-      t("Deep work — draft project brief", 1, 90, at(9, 0)),
-      t("Workout (45m)", 1, 45, at(7, 0)),
-      t("Inbox zero", 2, 20, at(11, 30)),
-      t("Read 20 pages", 2, 25, at(20, 0)),
-      t("Plan tomorrow", 3, 10, at(21, 30)),
-    ],
-    habits: [
-      h("Meditate 10 min", { type: "daily" }),
-      h("No phone after 10pm", { type: "daily" }),
-      h("Run", { type: "weekly", days: [1, 3, 5] }),
-    ],
-    habitCompletions: [],
-    ledger: [],
-    redemptions: [],
-    xp: 0,
-    streak: 0,
-    lastCompletionDate: null,
-    settings: {
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
-      quietHoursStart: 22,
-      quietHoursEnd: 7,
-      notifications: true,
-    },
-  };
-}
-
-// ---------- Tasks ----------
-
-export function getDayState(userId: string) {
-  const s = ensureUser(userId);
-  const tasks = [...s.tasks].sort((a, b) => {
-    const at = a.scheduledFor ?? "";
-    const bt = b.scheduledFor ?? "";
-    return at.localeCompare(bt);
-  });
-  return {
-    tasks,
-    xp: s.xp,
-    streak: s.streak,
-    ledger: s.ledger.slice(-20).reverse(),
-  };
-}
-
-export function createTask(
-  userId: string,
-  input: {
-    title: string;
-    priority: Priority;
-    estimatedMinutes: number;
-    scheduledFor: string | null;
-  },
-): Task {
-  const s = ensureUser(userId);
-  const task: Task = {
-    id: nanoid(),
-    title: input.title.trim(),
-    priority: input.priority,
-    estimatedMinutes: input.estimatedMinutes,
-    scheduledFor: input.scheduledFor,
-    status: "pending",
-    completedAt: null,
-    pointsAwarded: 0,
-    createdAt: new Date().toISOString(),
-  };
-  s.tasks.push(task);
-  persist();
-  return task;
-}
-
-function bumpDailyStreak(s: UserState) {
-  const today = todayIso();
-  if (s.lastCompletionDate !== today) {
-    const yesterday = isoDateNDaysAgo(1);
-    s.streak = s.lastCompletionDate === yesterday ? s.streak + 1 : 1;
-    s.lastCompletionDate = today;
-  }
-}
-
-export function completeTask(userId: string, taskId: string): { task: Task; awarded: number } | null {
-  const s = ensureUser(userId);
-  const task = s.tasks.find((t) => t.id === taskId);
-  if (!task || task.status === "done") return null;
-  const awarded = pointsFor(task.priority, task.estimatedMinutes);
-  task.status = "done";
-  task.completedAt = new Date().toISOString();
-  task.pointsAwarded = awarded;
-  s.xp += awarded;
-  s.ledger.push({
-    id: nanoid(),
-    delta: awarded,
-    reason: "task_complete",
-    refId: task.id,
-    balanceAfter: s.xp,
-    createdAt: task.completedAt,
-  });
-  bumpDailyStreak(s);
-  persist();
-  return { task, awarded };
-}
-
-export function uncompleteTask(userId: string, taskId: string): Task | null {
-  const s = ensureUser(userId);
-  const task = s.tasks.find((t) => t.id === taskId);
-  if (!task || task.status !== "done") return null;
-  const refund = task.pointsAwarded;
-  task.status = "pending";
-  task.completedAt = null;
-  task.pointsAwarded = 0;
-  s.xp = Math.max(0, s.xp - refund);
-  s.ledger.push({
-    id: nanoid(),
-    delta: -refund,
-    reason: "task_uncomplete",
-    refId: task.id,
-    balanceAfter: s.xp,
-    createdAt: new Date().toISOString(),
-  });
-  persist();
-  return task;
-}
-
-export function deleteTask(userId: string, taskId: string): boolean {
-  const s = ensureUser(userId);
-  const before = s.tasks.length;
-  s.tasks = s.tasks.filter((t) => t.id !== taskId);
-  const ok = s.tasks.length < before;
-  if (ok) persist();
-  return ok;
-}
-
-// ---------- Habits ----------
-
-function isHabitDueOn(habit: Habit, isoDate: string): boolean {
-  if (!habit.active) return false;
-  if (habit.cadence.type === "daily") return true;
-  return habit.cadence.days.includes(dayIndex(isoDate));
-}
-
-function recalcHabitStreak(habit: Habit, completions: HabitCompletion[]): void {
-  const myDates = new Set(
-    completions.filter((c) => c.habitId === habit.id).map((c) => c.date),
-  );
-  let streak = 0;
-  let longest = 0;
-  let cur = 0;
-  for (let i = 0; i < 365; i++) {
-    const d = isoDateNDaysAgo(i);
-    if (!isHabitDueOn(habit, d)) {
-      continue;
-    }
-    if (myDates.has(d)) {
-      cur += 1;
-      if (i === streak) streak = cur;
-      if (cur > longest) longest = cur;
-    } else {
-      if (i === 0) {
-        cur = 0;
-      } else {
-        if (streak === 0) streak = 0;
-        break;
-      }
-    }
-  }
-  habit.currentStreak = streak;
-  habit.longestStreak = Math.max(habit.longestStreak, longest, streak);
-}
-
-function recalcAllStreaks(s: UserState) {
-  for (const h of s.habits) recalcHabitStreak(h, s.habitCompletions);
-}
-
-function rolloverFreezes(s: UserState) {
-  const m = monthIso();
-  for (const h of s.habits) {
-    if (h.freezesResetMonth !== m) {
-      h.freezesRemaining = 2;
-      h.freezesResetMonth = m;
-    }
-  }
-}
-
-export function getHabits(userId: string) {
-  const s = ensureUser(userId);
-  rolloverFreezes(s);
-  recalcAllStreaks(s);
-  const today = todayIso();
-  const completedToday = new Set(
-    s.habitCompletions.filter((c) => c.date === today).map((c) => c.habitId),
-  );
-  const habits = s.habits
-    .filter((h) => h.active)
-    .map((h) => ({
-      ...h,
-      dueToday: isHabitDueOn(h, today),
-      completedToday: completedToday.has(h.id),
-      last30: Array.from({ length: 30 }, (_, i) => {
-        const d = isoDateNDaysAgo(29 - i);
-        const due = isHabitDueOn(h, d);
-        const done = s.habitCompletions.some((c) => c.habitId === h.id && c.date === d);
-        return { date: d, due, done };
-      }),
-    }));
-  return { habits, totalActive: habits.length };
-}
-
-export function createHabit(
-  userId: string,
-  input: { title: string; cadence: Habit["cadence"] },
-): Habit {
-  const s = ensureUser(userId);
-  const h: Habit = {
-    id: nanoid(),
-    title: input.title.trim(),
-    cadence: input.cadence,
-    currentStreak: 0,
-    longestStreak: 0,
-    freezesRemaining: 2,
-    freezesResetMonth: monthIso(),
-    active: true,
-    createdAt: new Date().toISOString(),
-  };
-  s.habits.push(h);
-  persist();
-  return h;
-}
-
-export function toggleHabitToday(userId: string, habitId: string): { done: boolean; awarded: number } | null {
-  const s = ensureUser(userId);
-  const habit = s.habits.find((h) => h.id === habitId);
-  if (!habit) return null;
-  const today = todayIso();
-  const existingIdx = s.habitCompletions.findIndex(
-    (c) => c.habitId === habitId && c.date === today,
-  );
-  if (existingIdx >= 0) {
-    s.habitCompletions.splice(existingIdx, 1);
-    const refund = 20;
-    s.xp = Math.max(0, s.xp - refund);
-    s.ledger.push({
-      id: nanoid(),
-      delta: -refund,
-      reason: "habit_uncomplete",
-      refId: habitId,
-      balanceAfter: s.xp,
-      createdAt: new Date().toISOString(),
-    });
-    recalcHabitStreak(habit, s.habitCompletions);
-    persist();
-    return { done: false, awarded: -refund };
-  }
-  s.habitCompletions.push({
-    id: nanoid(),
-    habitId,
-    date: today,
-    effortPct: 1,
-    createdAt: new Date().toISOString(),
-  });
-  const awarded = 20;
-  s.xp += awarded;
-  s.ledger.push({
-    id: nanoid(),
-    delta: awarded,
-    reason: "habit_complete",
-    refId: habitId,
-    balanceAfter: s.xp,
-    createdAt: new Date().toISOString(),
-  });
-  recalcHabitStreak(habit, s.habitCompletions);
-  bumpDailyStreak(s);
-  persist();
-  return { done: true, awarded };
-}
-
-export function deleteHabit(userId: string, habitId: string): boolean {
-  const s = ensureUser(userId);
-  const before = s.habits.length;
-  s.habits = s.habits.filter((h) => h.id !== habitId);
-  const ok = s.habits.length < before;
-  if (ok) {
-    s.habitCompletions = s.habitCompletions.filter((c) => c.habitId !== habitId);
-    persist();
-  }
-  return ok;
-}
-
-export function freezeHabit(userId: string, habitId: string): { ok: boolean; message?: string } {
-  const s = ensureUser(userId);
-  const habit = s.habits.find((h) => h.id === habitId);
-  if (!habit) return { ok: false, message: "Habit not found" };
-  rolloverFreezes(s);
-  if (habit.freezesRemaining <= 0)
-    return { ok: false, message: "No freezes left this month" };
-  const today = todayIso();
-  if (s.habitCompletions.some((c) => c.habitId === habitId && c.date === today))
-    return { ok: false, message: "Already complete today" };
-  s.habitCompletions.push({
-    id: nanoid(),
-    habitId,
-    date: today,
-    effortPct: 0,
-    createdAt: new Date().toISOString(),
-  });
-  habit.freezesRemaining -= 1;
-  recalcHabitStreak(habit, s.habitCompletions);
-  persist();
-  return { ok: true };
-}
-
-// ---------- Rewards ----------
+// ---------- Reward catalog (static) ----------
 
 export const REWARD_CATALOG: Reward[] = [
   { id: "coffee", title: "Buy yourself a coffee", emoji: "☕", cost: 100, kind: "self", description: "You earned it. Go grab one." },
@@ -507,99 +106,550 @@ export const REWARD_CATALOG: Reward[] = [
   { id: "giftcard-5", title: "$5 Amazon gift card", emoji: "🎁", cost: 1500, kind: "real", description: "Stub: would call Tango Card API in production." },
 ];
 
-export function getRewardsState(userId: string) {
-  const s = ensureUser(userId);
-  const recent = [...s.redemptions].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 12);
-  const ledger = [...s.ledger].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 15);
-  const totalEarned = s.ledger.filter((l) => l.delta > 0).reduce((acc, l) => acc + l.delta, 0);
-  const totalSpent = s.ledger.filter((l) => l.delta < 0 && l.reason === "redeem").reduce((acc, l) => acc - l.delta, 0);
-  return { catalog: REWARD_CATALOG, balance: s.xp, redemptions: recent, ledger, totalEarned, totalSpent };
+const REWARD_BY_ID: Map<string, Reward> = new Map(REWARD_CATALOG.map((r) => [r.id, r]));
+
+// User creation happens in src/app/(auth)/actions.ts during sign-up.
+// All store functions assume the user already exists (auth middleware enforces this).
+
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+async function bumpDailyStreak(tx: Tx, userId: string): Promise<void> {
+  const today = todayIso();
+  const yesterday = isoDateNDaysAgo(1);
+  const [u] = await tx
+    .select({ streak: users.streak, lastCompletionDate: users.lastCompletionDate })
+    .from(users)
+    .where(eq(users.id, userId));
+  if (!u) return;
+  if (u.lastCompletionDate === today) return;
+  const nextStreak = u.lastCompletionDate === yesterday ? u.streak + 1 : 1;
+  await tx
+    .update(users)
+    .set({ streak: nextStreak, lastCompletionDate: today })
+    .where(eq(users.id, userId));
 }
 
-export function redeemReward(userId: string, rewardId: string): { ok: boolean; message?: string } {
-  const s = ensureUser(userId);
-  const reward = REWARD_CATALOG.find((r) => r.id === rewardId);
-  if (!reward) return { ok: false, message: "Reward not found" };
-  if (s.xp < reward.cost) return { ok: false, message: "Not enough XP" };
-  s.xp -= reward.cost;
-  const redemption: Redemption = {
-    id: nanoid(),
-    rewardId: reward.id,
-    rewardTitle: reward.title,
-    rewardEmoji: reward.emoji,
-    cost: reward.cost,
-    status: reward.kind === "self" ? "fulfilled" : "pending",
-    createdAt: new Date().toISOString(),
+async function rolloverFreezes(userId: string): Promise<void> {
+  const m = monthIso();
+  await db
+    .update(habitsT)
+    .set({ freezesRemaining: 2, freezesResetMonth: m })
+    .where(and(eq(habitsT.userId, userId), sql`${habitsT.freezesResetMonth} <> ${m}`));
+}
+
+// ---------- Tasks ----------
+
+type TaskRow = typeof tasksT.$inferSelect;
+
+function rowToTask(r: TaskRow): Task {
+  return {
+    id: r.id,
+    title: r.title,
+    priority: r.priority as Priority,
+    estimatedMinutes: r.estimatedMinutes,
+    scheduledFor: asIso(r.scheduledFor),
+    status: r.status as Task["status"],
+    completedAt: asIso(r.completedAt),
+    pointsAwarded: r.pointsAwarded,
+    createdAt: r.createdAt.toISOString(),
   };
-  s.redemptions.push(redemption);
-  s.ledger.push({
-    id: nanoid(),
-    delta: -reward.cost,
-    reason: "redeem",
-    refId: redemption.id,
-    balanceAfter: s.xp,
-    createdAt: redemption.createdAt,
+}
+
+export async function getDayState(userId: string) {
+const [u] = await db
+    .select({ xp: users.xp, streak: users.streak })
+    .from(users)
+    .where(eq(users.id, userId));
+  const rows = await db
+    .select()
+    .from(tasksT)
+    .where(eq(tasksT.userId, userId))
+    .orderBy(sql`${tasksT.scheduledFor} NULLS LAST`, tasksT.createdAt);
+  const ledger = await db
+    .select()
+    .from(rewardLedger)
+    .where(eq(rewardLedger.userId, userId))
+    .orderBy(desc(rewardLedger.createdAt))
+    .limit(20);
+  return {
+    tasks: rows.map(rowToTask),
+    xp: u?.xp ?? 0,
+    streak: u?.streak ?? 0,
+    ledger: ledger.map((l) => ({
+      id: l.id,
+      delta: l.delta,
+      reason: l.reason,
+      refId: l.refId ?? null,
+      balanceAfter: l.balanceAfter,
+      createdAt: l.createdAt.toISOString(),
+    })),
+  };
+}
+
+export async function createTask(
+  userId: string,
+  input: {
+    title: string;
+    priority: Priority;
+    estimatedMinutes: number;
+    scheduledFor: string | null;
+  },
+): Promise<Task> {
+const [row] = await db
+    .insert(tasksT)
+    .values({
+      userId,
+      title: input.title.trim(),
+      priority: input.priority,
+      estimatedMinutes: input.estimatedMinutes,
+      scheduledFor: input.scheduledFor ? new Date(input.scheduledFor) : null,
+    })
+    .returning();
+  return rowToTask(row);
+}
+
+export async function completeTask(
+  userId: string,
+  taskId: string,
+): Promise<{ task: Task; awarded: number } | null> {
+  return await db.transaction(async (tx) => {
+    const [task] = await tx
+      .select()
+      .from(tasksT)
+      .where(and(eq(tasksT.id, taskId), eq(tasksT.userId, userId)))
+      .limit(1);
+    if (!task || task.status === "done") return null;
+    const awarded = pointsFor(task.priority as Priority, task.estimatedMinutes);
+    const completedAt = new Date();
+    const [updated] = await tx
+      .update(tasksT)
+      .set({ status: "done", completedAt, pointsAwarded: awarded })
+      .where(eq(tasksT.id, taskId))
+      .returning();
+    const [u] = await tx
+      .update(users)
+      .set({ xp: sql`${users.xp} + ${awarded}` })
+      .where(eq(users.id, userId))
+      .returning({ xp: users.xp });
+    await tx.insert(rewardLedger).values({
+      userId,
+      delta: awarded,
+      reason: "task_complete",
+      refId: taskId,
+      balanceAfter: u.xp,
+    });
+    await bumpDailyStreak(tx, userId);
+    return { task: rowToTask(updated), awarded };
   });
-  persist();
+}
+
+export async function uncompleteTask(userId: string, taskId: string): Promise<Task | null> {
+  return await db.transaction(async (tx) => {
+    const [task] = await tx
+      .select()
+      .from(tasksT)
+      .where(and(eq(tasksT.id, taskId), eq(tasksT.userId, userId)))
+      .limit(1);
+    if (!task || task.status !== "done") return null;
+    const refund = task.pointsAwarded;
+    const [updated] = await tx
+      .update(tasksT)
+      .set({ status: "pending", completedAt: null, pointsAwarded: 0 })
+      .where(eq(tasksT.id, taskId))
+      .returning();
+    const [u] = await tx
+      .update(users)
+      .set({ xp: sql`GREATEST(0, ${users.xp} - ${refund})` })
+      .where(eq(users.id, userId))
+      .returning({ xp: users.xp });
+    await tx.insert(rewardLedger).values({
+      userId,
+      delta: -refund,
+      reason: "task_uncomplete",
+      refId: taskId,
+      balanceAfter: u.xp,
+    });
+    return rowToTask(updated);
+  });
+}
+
+export async function deleteTask(userId: string, taskId: string): Promise<boolean> {
+  const result = await db
+    .delete(tasksT)
+    .where(and(eq(tasksT.id, taskId), eq(tasksT.userId, userId)))
+    .returning({ id: tasksT.id });
+  return result.length > 0;
+}
+
+// ---------- Habits ----------
+
+type HabitRow = typeof habitsT.$inferSelect;
+
+function rowToHabit(r: HabitRow): Habit {
+  return {
+    id: r.id,
+    title: r.title,
+    cadence: r.cadence as Habit["cadence"],
+    currentStreak: r.currentStreak,
+    longestStreak: r.longestStreak,
+    freezesRemaining: r.freezesRemaining,
+    freezesResetMonth: r.freezesResetMonth,
+    active: r.active,
+    createdAt: r.createdAt.toISOString(),
+  };
+}
+
+function isHabitDueOn(habit: Habit, isoDate: string): boolean {
+  if (!habit.active) return false;
+  if (habit.cadence.type === "daily") return true;
+  return habit.cadence.days.includes(dayIndex(isoDate));
+}
+
+function calcStreak(habit: Habit, completionDates: Set<string>): { current: number; longest: number } {
+  let cur = 0;
+  let longest = habit.longestStreak;
+  let stillCurrent = true;
+  for (let i = 0; i < 365; i++) {
+    const d = isoDateNDaysAgo(i);
+    if (!isHabitDueOn(habit, d)) continue;
+    if (completionDates.has(d)) {
+      cur += 1;
+      if (cur > longest) longest = cur;
+    } else {
+      if (i === 0) {
+        // today not yet done — don't break the streak retroactively
+      } else if (stillCurrent) {
+        break;
+      }
+      stillCurrent = false;
+    }
+  }
+  return { current: cur, longest };
+}
+
+export async function getHabits(userId: string) {
+await rolloverFreezes(userId);
+  const rows = await db
+    .select()
+    .from(habitsT)
+    .where(and(eq(habitsT.userId, userId), eq(habitsT.active, true)))
+    .orderBy(habitsT.createdAt);
+  const completions = await db
+    .select()
+    .from(habitCompletions)
+    .where(
+      and(
+        eq(habitCompletions.userId, userId),
+        gte(habitCompletions.date, isoDateNDaysAgo(364)),
+      ),
+    );
+  const today = todayIso();
+  const habits = rows.map((r) => {
+    const habit = rowToHabit(r);
+    const myDates = new Set(
+      completions.filter((c) => c.habitId === habit.id).map((c) => c.date),
+    );
+    const { current, longest } = calcStreak(habit, myDates);
+    habit.currentStreak = current;
+    habit.longestStreak = longest;
+    const last30 = Array.from({ length: 30 }, (_, i) => {
+      const d = isoDateNDaysAgo(29 - i);
+      return { date: d, due: isHabitDueOn(habit, d), done: myDates.has(d) };
+    });
+    return {
+      ...habit,
+      dueToday: isHabitDueOn(habit, today),
+      completedToday: myDates.has(today),
+      last30,
+    };
+  });
+  return { habits, totalActive: habits.length };
+}
+
+export async function createHabit(
+  userId: string,
+  input: { title: string; cadence: Habit["cadence"] },
+): Promise<Habit> {
+const [row] = await db
+    .insert(habitsT)
+    .values({
+      userId,
+      title: input.title.trim(),
+      cadence: input.cadence,
+      freezesResetMonth: monthIso(),
+    })
+    .returning();
+  return rowToHabit(row);
+}
+
+const HABIT_POINTS = 20;
+
+export async function toggleHabitToday(
+  userId: string,
+  habitId: string,
+): Promise<{ done: boolean; awarded: number } | null> {
+  return await db.transaction(async (tx) => {
+    const [habit] = await tx
+      .select()
+      .from(habitsT)
+      .where(and(eq(habitsT.id, habitId), eq(habitsT.userId, userId)))
+      .limit(1);
+    if (!habit) return null;
+    const today = todayIso();
+    const existing = await tx
+      .select()
+      .from(habitCompletions)
+      .where(and(eq(habitCompletions.habitId, habitId), eq(habitCompletions.date, today)))
+      .limit(1);
+    if (existing.length > 0) {
+      await tx
+        .delete(habitCompletions)
+        .where(and(eq(habitCompletions.habitId, habitId), eq(habitCompletions.date, today)));
+      const [u] = await tx
+        .update(users)
+        .set({ xp: sql`GREATEST(0, ${users.xp} - ${HABIT_POINTS})` })
+        .where(eq(users.id, userId))
+        .returning({ xp: users.xp });
+      await tx.insert(rewardLedger).values({
+        userId,
+        delta: -HABIT_POINTS,
+        reason: "habit_uncomplete",
+        refId: habitId,
+        balanceAfter: u.xp,
+      });
+      return { done: false, awarded: -HABIT_POINTS };
+    }
+    await tx.insert(habitCompletions).values({
+      userId,
+      habitId,
+      date: today,
+      effortPct: "1.000",
+    });
+    const [u] = await tx
+      .update(users)
+      .set({ xp: sql`${users.xp} + ${HABIT_POINTS}` })
+      .where(eq(users.id, userId))
+      .returning({ xp: users.xp });
+    await tx.insert(rewardLedger).values({
+      userId,
+      delta: HABIT_POINTS,
+      reason: "habit_complete",
+      refId: habitId,
+      balanceAfter: u.xp,
+    });
+    await bumpDailyStreak(tx, userId);
+    return { done: true, awarded: HABIT_POINTS };
+  });
+}
+
+export async function deleteHabit(userId: string, habitId: string): Promise<boolean> {
+  const result = await db
+    .delete(habitsT)
+    .where(and(eq(habitsT.id, habitId), eq(habitsT.userId, userId)))
+    .returning({ id: habitsT.id });
+  return result.length > 0;
+}
+
+export async function freezeHabit(
+  userId: string,
+  habitId: string,
+): Promise<{ ok: boolean; message?: string }> {
+  await rolloverFreezes(userId);
+  const [habit] = await db
+    .select()
+    .from(habitsT)
+    .where(and(eq(habitsT.id, habitId), eq(habitsT.userId, userId)))
+    .limit(1);
+  if (!habit) return { ok: false, message: "Habit not found" };
+  if (habit.freezesRemaining <= 0) return { ok: false, message: "No freezes left this month" };
+  const today = todayIso();
+  const existing = await db
+    .select()
+    .from(habitCompletions)
+    .where(and(eq(habitCompletions.habitId, habitId), eq(habitCompletions.date, today)))
+    .limit(1);
+  if (existing.length > 0) return { ok: false, message: "Already complete today" };
+  await db.transaction(async (tx) => {
+    await tx.insert(habitCompletions).values({
+      userId,
+      habitId,
+      date: today,
+      effortPct: "0.000",
+    });
+    await tx
+      .update(habitsT)
+      .set({ freezesRemaining: sql`${habitsT.freezesRemaining} - 1` })
+      .where(eq(habitsT.id, habitId));
+  });
   return { ok: true };
+}
+
+// ---------- Rewards ----------
+
+export async function getRewardsState(userId: string) {
+const [u] = await db.select({ xp: users.xp }).from(users).where(eq(users.id, userId));
+  const reds = await db
+    .select()
+    .from(redemptionsT)
+    .where(eq(redemptionsT.userId, userId))
+    .orderBy(desc(redemptionsT.createdAt))
+    .limit(12);
+  const ledger = await db
+    .select()
+    .from(rewardLedger)
+    .where(eq(rewardLedger.userId, userId))
+    .orderBy(desc(rewardLedger.createdAt))
+    .limit(15);
+  const [{ totalEarned, totalSpent }] = await db
+    .select({
+      totalEarned: sql<number>`COALESCE(SUM(CASE WHEN ${rewardLedger.delta} > 0 THEN ${rewardLedger.delta} ELSE 0 END), 0)::int`,
+      totalSpent: sql<number>`COALESCE(SUM(CASE WHEN ${rewardLedger.delta} < 0 AND ${rewardLedger.reason} = 'redeem' THEN -${rewardLedger.delta} ELSE 0 END), 0)::int`,
+    })
+    .from(rewardLedger)
+    .where(eq(rewardLedger.userId, userId));
+  const redemptions: Redemption[] = reds.map((r) => {
+    const meta = REWARD_BY_ID.get(r.itemId);
+    return {
+      id: r.id,
+      rewardId: r.itemId,
+      rewardTitle: meta?.title ?? r.itemId,
+      rewardEmoji: meta?.emoji ?? "🎁",
+      cost: r.costPoints,
+      status: r.status as Redemption["status"],
+      createdAt: r.createdAt.toISOString(),
+    };
+  });
+  return {
+    catalog: REWARD_CATALOG,
+    balance: u?.xp ?? 0,
+    redemptions,
+    ledger: ledger.map((l) => ({
+      id: l.id,
+      delta: l.delta,
+      reason: l.reason,
+      refId: l.refId ?? null,
+      balanceAfter: l.balanceAfter,
+      createdAt: l.createdAt.toISOString(),
+    })),
+    totalEarned: Number(totalEarned ?? 0),
+    totalSpent: Number(totalSpent ?? 0),
+  };
+}
+
+export async function redeemReward(
+  userId: string,
+  rewardId: string,
+): Promise<{ ok: boolean; message?: string }> {
+  const reward = REWARD_BY_ID.get(rewardId);
+  if (!reward) return { ok: false, message: "Reward not found" };
+  return await db.transaction(async (tx) => {
+    const [u] = await tx
+      .select({ xp: users.xp })
+      .from(users)
+      .where(eq(users.id, userId))
+      .for("update");
+    if (!u || u.xp < reward.cost) return { ok: false, message: "Not enough XP" };
+    const [updatedUser] = await tx
+      .update(users)
+      .set({ xp: sql`${users.xp} - ${reward.cost}` })
+      .where(eq(users.id, userId))
+      .returning({ xp: users.xp });
+    const [redemption] = await tx
+      .insert(redemptionsT)
+      .values({
+        userId,
+        itemId: reward.id,
+        costPoints: reward.cost,
+        status: reward.kind === "self" ? "fulfilled" : "pending",
+      })
+      .returning();
+    await tx.insert(rewardLedger).values({
+      userId,
+      delta: -reward.cost,
+      reason: "redeem",
+      refId: redemption.id,
+      balanceAfter: updatedUser.xp,
+    });
+    return { ok: true };
+  });
 }
 
 // ---------- Analytics ----------
 
-export function getAnalytics(userId: string) {
-  const s = ensureUser(userId);
-  const today = todayIso();
+export async function getAnalytics(userId: string) {
+const today = todayIso();
+  const since30 = isoDateNDaysAgo(29);
+  const since365 = isoDateNDaysAgo(364);
+
+  const allTasks = await db
+    .select({
+      status: tasksT.status,
+      scheduledFor: tasksT.scheduledFor,
+      completedAt: tasksT.completedAt,
+    })
+    .from(tasksT)
+    .where(eq(tasksT.userId, userId));
+
+  const completions = await db
+    .select({ date: habitCompletions.date })
+    .from(habitCompletions)
+    .where(and(eq(habitCompletions.userId, userId), gte(habitCompletions.date, since365)));
+
+  const habitsRows = await db
+    .select({ longestStreak: habitsT.longestStreak, title: habitsT.title })
+    .from(habitsT)
+    .where(eq(habitsT.userId, userId))
+    .orderBy(desc(habitsT.longestStreak))
+    .limit(1);
+
   const days: { date: string; total: number; done: number }[] = [];
   for (let i = 29; i >= 0; i--) {
-    const d = isoDateNDaysAgo(i);
-    days.push({ date: d, total: 0, done: 0 });
+    days.push({ date: isoDateNDaysAgo(i), total: 0, done: 0 });
   }
   const dayMap = new Map(days.map((d) => [d.date, d]));
-  for (const t of s.tasks) {
-    if (!t.scheduledFor && !t.completedAt) continue;
-    const iso = (t.completedAt ?? t.scheduledFor ?? "").slice(0, 10);
+  for (const t of allTasks) {
+    const ref = t.completedAt ?? t.scheduledFor;
+    if (!ref) continue;
+    const iso = new Date(ref).toISOString().slice(0, 10);
     const bucket = dayMap.get(iso);
     if (!bucket) continue;
     bucket.total += 1;
     if (t.status === "done") bucket.done += 1;
   }
-  const last30 = days.map((d) => ({
-    ...d,
-    pct: d.total === 0 ? 0 : d.done / d.total,
-  }));
+  const last30 = days.map((d) => ({ ...d, pct: d.total === 0 ? 0 : d.done / d.total }));
 
   const eligible = last30.filter((d) => d.total > 0);
-  const consistency = eligible.length === 0 ? 0 : Math.round(
-    (eligible.reduce((acc, d) => acc + d.pct, 0) / eligible.length) * 100,
-  );
+  const consistency =
+    eligible.length === 0
+      ? 0
+      : Math.round(
+          (eligible.reduce((acc, d) => acc + d.pct, 0) / eligible.length) * 100,
+        );
 
-  const yearHeatmap: { date: string; pct: number }[] = [];
   const completionsByDate = new Map<string, number>();
-  for (const t of s.tasks) {
+  for (const t of allTasks) {
     if (t.status !== "done" || !t.completedAt) continue;
-    const k = t.completedAt.slice(0, 10);
+    const k = new Date(t.completedAt).toISOString().slice(0, 10);
     completionsByDate.set(k, (completionsByDate.get(k) ?? 0) + 1);
   }
-  for (const c of s.habitCompletions) {
+  for (const c of completions) {
     completionsByDate.set(c.date, (completionsByDate.get(c.date) ?? 0) + 1);
   }
+  const yearHeatmap: { date: string; pct: number }[] = [];
   for (let i = 364; i >= 0; i--) {
     const d = isoDateNDaysAgo(i);
-    const cnt = completionsByDate.get(d) ?? 0;
-    const pct = Math.min(1, cnt / 5);
-    yearHeatmap.push({ date: d, pct });
+    yearHeatmap.push({ date: d, pct: Math.min(1, (completionsByDate.get(d) ?? 0) / 5) });
   }
 
   const hours = Array.from({ length: 24 }, () => 0);
-  for (const t of s.tasks) {
+  for (const t of allTasks) {
     if (t.status === "done" && t.completedAt) {
-      const h = new Date(t.completedAt).getHours();
-      hours[h] += 1;
+      hours[new Date(t.completedAt).getHours()] += 1;
     }
   }
 
-  const totalDone = s.tasks.filter((t) => t.status === "done").length;
-  const longestHabit = [...s.habits].sort((a, b) => b.longestStreak - a.longestStreak)[0];
+  const totalDone = allTasks.filter((t) => t.status === "done").length;
+  const longestHabit = habitsRows[0];
 
   const insights: string[] = [];
   if (eligible.length >= 3) {
@@ -620,39 +670,90 @@ export function getAnalytics(userId: string) {
     insights.push("Complete a few more tasks to unlock personal insights.");
   }
 
-  return {
-    consistency,
-    last30,
-    yearHeatmap,
-    hours,
-    totalDone,
-    insights,
-    today,
-  };
+  return { consistency, last30, yearHeatmap, hours, totalDone, insights, today, since30 };
 }
 
 // ---------- Settings ----------
 
-export function getSettings(userId: string) {
-  const s = ensureUser(userId);
+export async function getSettings(userId: string) {
+const [u] = await db.select().from(users).where(eq(users.id, userId));
+  const [{ taskCount }] = await db
+    .select({ taskCount: sql<number>`COUNT(*)::int` })
+    .from(tasksT)
+    .where(eq(tasksT.userId, userId));
+  const [{ habitCount }] = await db
+    .select({ habitCount: sql<number>`COUNT(*)::int` })
+    .from(habitsT)
+    .where(eq(habitsT.userId, userId));
+  const [{ redeemCount }] = await db
+    .select({ redeemCount: sql<number>`COUNT(*)::int` })
+    .from(redemptionsT)
+    .where(eq(redemptionsT.userId, userId));
   return {
-    settings: s.settings,
-    xp: s.xp,
-    streak: s.streak,
-    totalTasks: s.tasks.length,
-    totalHabits: s.habits.length,
-    totalRedeemed: s.redemptions.length,
+    settings: {
+      timezone: u?.timezone ?? "UTC",
+      quietHoursStart: u?.quietHoursStart ?? 22,
+      quietHoursEnd: u?.quietHoursEnd ?? 7,
+      notifications: u?.notifications ?? true,
+    },
+    xp: u?.xp ?? 0,
+    streak: u?.streak ?? 0,
+    totalTasks: Number(taskCount ?? 0),
+    totalHabits: Number(habitCount ?? 0),
+    totalRedeemed: Number(redeemCount ?? 0),
   };
 }
 
-export function updateSettings(userId: string, patch: Partial<Settings>): Settings {
-  const s = ensureUser(userId);
-  s.settings = { ...s.settings, ...patch };
-  persist();
-  return s.settings;
+export async function updateSettings(userId: string, patch: Partial<Settings>): Promise<Settings> {
+const updates: Record<string, unknown> = {};
+  if (patch.timezone !== undefined) updates.timezone = patch.timezone;
+  if (patch.quietHoursStart !== undefined) updates.quietHoursStart = patch.quietHoursStart;
+  if (patch.quietHoursEnd !== undefined) updates.quietHoursEnd = patch.quietHoursEnd;
+  if (patch.notifications !== undefined) updates.notifications = patch.notifications;
+  if (Object.keys(updates).length > 0) {
+    await db.update(users).set(updates).where(eq(users.id, userId));
+  }
+  const [u] = await db.select().from(users).where(eq(users.id, userId));
+  return {
+    timezone: u.timezone,
+    quietHoursStart: u.quietHoursStart,
+    quietHoursEnd: u.quietHoursEnd,
+    notifications: u.notifications,
+  };
 }
 
-export function resetUser(userId: string): void {
-  store.set(userId, seed());
-  persist();
+export async function resetUser(userId: string): Promise<void> {
+  // Wipe all activity for this user but keep their account + email/password.
+  await db.transaction(async (tx) => {
+    await tx.delete(redemptionsT).where(eq(redemptionsT.userId, userId));
+    await tx.delete(rewardLedger).where(eq(rewardLedger.userId, userId));
+    await tx.delete(habitCompletions).where(eq(habitCompletions.userId, userId));
+    await tx.delete(habitsT).where(eq(habitsT.userId, userId));
+    await tx.delete(tasksT).where(eq(tasksT.userId, userId));
+    await tx
+      .update(users)
+      .set({ xp: 0, level: 1, streak: 0, lastCompletionDate: null })
+      .where(eq(users.id, userId));
+    const now = new Date();
+    const at = (h: number, m = 0) => {
+      const d = new Date(now);
+      d.setHours(h, m, 0, 0);
+      return d;
+    };
+    await tx.insert(tasksT).values([
+      { userId, title: "Deep work — draft project brief", priority: 1, estimatedMinutes: 90, scheduledFor: at(9, 0) },
+      { userId, title: "Workout (45m)", priority: 1, estimatedMinutes: 45, scheduledFor: at(7, 0) },
+      { userId, title: "Inbox zero", priority: 2, estimatedMinutes: 20, scheduledFor: at(11, 30) },
+      { userId, title: "Read 20 pages", priority: 2, estimatedMinutes: 25, scheduledFor: at(20, 0) },
+      { userId, title: "Plan tomorrow", priority: 3, estimatedMinutes: 10, scheduledFor: at(21, 30) },
+    ]);
+    await tx.insert(habitsT).values([
+      { userId, title: "Meditate 10 min", cadence: { type: "daily" }, freezesResetMonth: monthIso() },
+      { userId, title: "No phone after 10pm", cadence: { type: "daily" }, freezesResetMonth: monthIso() },
+      { userId, title: "Run", cadence: { type: "weekly", days: [1, 3, 5] }, freezesResetMonth: monthIso() },
+    ]);
+  });
 }
+
+// Avoid unused-import warnings for typed helpers we kept for future use.
+void inArray;

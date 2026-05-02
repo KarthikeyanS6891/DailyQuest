@@ -1,6 +1,7 @@
 import { Coins, TrendingUp, History } from "lucide-react";
 import { getRewardsState } from "@/store/memory";
 import { RewardCard } from "@/components/RewardCard";
+import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -15,9 +16,9 @@ function formatRelative(iso: string) {
   return `${d}d ago`;
 }
 
-export default function RewardsPage() {
-  const userId = process.env.DEV_USER_ID ?? "dev-user";
-  const { catalog, balance, redemptions, ledger, totalEarned, totalSpent } = getRewardsState(userId);
+export default async function RewardsPage() {
+  const { id: userId } = await requireUser();
+  const { catalog, balance, redemptions, ledger, totalEarned, totalSpent } = await getRewardsState(userId);
 
   const sorted = [...catalog].sort((a, b) => {
     const aff = (n: number) => (balance >= n ? 0 : 1);

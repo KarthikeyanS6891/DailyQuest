@@ -5,12 +5,13 @@ import { QuickAdd } from "@/components/QuickAdd";
 import { AnimatedNumber } from "@/components/AnimatedNumber";
 import { getDayState } from "@/store/memory";
 import { levelForXp } from "@/lib/points";
+import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-export default function TodayPage() {
-  const userId = process.env.DEV_USER_ID ?? "dev-user";
-  const { tasks, xp, streak } = getDayState(userId);
+export default async function TodayPage() {
+  const { id: userId } = await requireUser();
+  const { tasks, xp, streak } = await getDayState(userId);
 
   const today = new Date();
   const headline = today.toLocaleDateString(undefined, {

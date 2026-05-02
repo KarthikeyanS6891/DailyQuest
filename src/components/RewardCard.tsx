@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Lock, Sparkles } from "lucide-react";
-import { redeemAction } from "@/app/rewards/actions";
+import { redeemAction } from "@/app/(app)/rewards/actions";
 import { Confetti } from "./Confetti";
 import { cn } from "@/lib/cn";
 

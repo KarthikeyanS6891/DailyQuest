@@ -1,21 +1,26 @@
-import { Flame, Gift, ListTodo, Repeat } from "lucide-react";
+import { Flame, Gift, ListTodo, LogOut, Mail, Repeat } from "lucide-react";
 import { getSettings } from "@/store/memory";
 import { SettingsForm } from "@/components/SettingsForm";
 import { ResetButton } from "@/components/ResetButton";
+import { SignOutButton } from "@/components/SignOutButton";
 import { levelForXp } from "@/lib/points";
+import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-export default function ProfilePage() {
-  const userId = process.env.DEV_USER_ID ?? "dev-user";
-  const data = getSettings(userId);
+export default async function ProfilePage() {
+  const user = await requireUser();
+  const data = await getSettings(user.id);
   const { level } = levelForXp(data.xp);
 
   return (
     <main className="mx-auto max-w-xl px-4 pb-24 pt-8 sm:pt-10">
-      <header className="mb-5">
-        <p className="text-xs uppercase tracking-widest text-muted">You</p>
-        <h1 className="mt-1 text-2xl font-semibold leading-tight">Your quest log</h1>
+      <header className="mb-5 flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs uppercase tracking-widest text-muted">You</p>
+          <h1 className="mt-1 text-2xl font-semibold leading-tight">Your quest log</h1>
+        </div>
+        <SignOutButton />
       </header>
 
       <section className="mb-5 rounded-2xl border border-brand/30 bg-gradient-to-br from-brand/15 via-surface to-accent/10 p-5">
@@ -23,9 +28,11 @@ export default function ProfilePage() {
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand text-2xl font-bold text-white">
             {level}
           </div>
-          <div>
-            <div className="text-sm text-muted">Level {level} · {data.xp} xp</div>
-            <div className="mt-1 text-lg font-semibold">Adventurer</div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5 text-sm text-muted">
+              <Mail size={12} /> <span className="truncate">{user.email}</span>
+            </div>
+            <div className="mt-0.5 text-lg font-semibold">Level {level} · {data.xp} xp</div>
           </div>
         </div>
       </section>
@@ -47,6 +54,10 @@ export default function ProfilePage() {
       <section>
         <ResetButton />
       </section>
+
+      <p className="mt-4 flex items-center justify-center gap-1 text-[10px] text-muted">
+        <LogOut size={10} /> Use the button up top to sign out.
+      </p>
     </main>
   );
 }

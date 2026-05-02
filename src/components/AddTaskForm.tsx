@@ -2,7 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import { Plus } from "lucide-react";
-import { addTaskAction } from "@/app/actions";
+import { addTaskAction } from "@/app/(app)/actions";
 import { cn } from "@/lib/cn";
 
 export function AddTaskForm() {
