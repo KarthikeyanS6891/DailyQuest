@@ -8,13 +8,11 @@ nixPkgs = ["nodejs_20"]
 cmds = ["npm ci --prefer-offline --no-audit --no-fund"]
 
 [phases.build]
-# Apply migrations against the production DB before building. Drizzle's
-# migrator is idempotent — it tracks applied migrations in a
-# __drizzle_migrations table, so re-deploys without schema changes are no-ops.
-cmds = [
-  "npm run db:migrate",
-  "npm run build",
-]
+# Build only. Migrations CANNOT run here — Railway's private DNS
+# (postgres.railway.internal) only resolves at runtime, not during the
+# build phase. Migrations run from `npm run start` instead, which
+# invokes scripts/migrate.mjs against the live DB.
+cmds = ["npm run build"]
 
 [start]
 cmd = "npm run start"

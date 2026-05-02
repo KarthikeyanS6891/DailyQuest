@@ -8,11 +8,12 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
+    "start": "node ./scripts/migrate.mjs && next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "db:migrate:runtime": "node ./scripts/migrate.mjs",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {

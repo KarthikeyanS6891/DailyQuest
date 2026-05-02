@@ -15,15 +15,17 @@ if (!url) {
 // We detect by environment, the explicit sslmode hint in the URL, or the
 // hostname not being localhost. Local docker stays plaintext.
 function needsSsl(connStr: string): boolean {
-  if (process.env.NODE_ENV === "production") return true;
-  if (/sslmode=require|sslmode=verify-full|sslmode=verify-ca/i.test(connStr)) return true;
+  // Localhost always wins, even under NODE_ENV=production, so local prod
+  // tests work against docker without TLS misconfigured.
   try {
     const host = new URL(connStr).hostname;
     if (host === "localhost" || host === "127.0.0.1") return false;
-    return true;
   } catch {
     return false;
   }
+  if (process.env.NODE_ENV === "production") return true;
+  if (/sslmode=require|sslmode=verify-full|sslmode=verify-ca/i.test(connStr)) return true;
+  return true;
 }
 
 declare global {
