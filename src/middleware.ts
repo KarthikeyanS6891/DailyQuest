@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 
 const PUBLIC = new Set(["/signin", "/signup"]);
+const PUBLIC_PREFIXES = ["/api/auth/"];
 const COOKIE = "dq_session";
 
 function getSecret(): Uint8Array | null {
@@ -12,7 +13,8 @@ function getSecret(): Uint8Array | null {
 
 export async function middleware(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
-  const isPublic = PUBLIC.has(pathname);
+  const isPublic =
+    PUBLIC.has(pathname) || PUBLIC_PREFIXES.some((p) => pathname.startsWith(p));
   const token = req.cookies.get(COOKIE)?.value;
 
   let authed = false;

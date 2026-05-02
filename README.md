@@ -36,6 +36,25 @@ npm run db:migrate
 
 4. Replace the calls in `src/app/actions.ts` with Drizzle queries against `src/db/schema.ts`. The in-memory store and the schema are intentionally shaped the same way to make this swap mechanical.
 
+## Sign in with Google (optional)
+
+Email/password works out of the box. To also offer "Continue with Google":
+
+1. Open the [Google Cloud Console Credentials page](https://console.cloud.google.com/apis/credentials).
+2. **Create OAuth client ID → Web application**.
+3. Under **Authorized redirect URIs**, add both:
+   - `http://localhost:3456/api/auth/google/callback`  (local dev)
+   - `https://<your-app>.up.railway.app/api/auth/google/callback`  (prod)
+4. Configure the OAuth consent screen (External, scopes: `openid`, `email`, `profile`).
+5. Copy the Client ID and Secret into your env:
+
+```
+GOOGLE_CLIENT_ID=...apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=...
+```
+
+That's it — the button appears on `/signin` and `/signup` automatically when both vars are set. Without them, the button is hidden and the routes return 501. Existing email/password accounts are linked by email on first Google sign-in, so users won't end up with duplicate records.
+
 ## Deploy to Railway
 
 1. Sign up at https://railway.com with GitHub.
