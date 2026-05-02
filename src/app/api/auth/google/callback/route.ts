@@ -40,10 +40,11 @@ async function seedNewUser(userId: string) {
 }
 
 function fail(req: NextRequest, reason: string) {
-  const url = req.nextUrl.clone();
-  url.pathname = "/signin";
-  url.search = `?error=${encodeURIComponent(reason)}`;
-  const res = NextResponse.redirect(url);
+  // Use getRequestOrigin (not req.nextUrl) so we redirect to the public
+  // host the user came in on, not the internal listening address Railway
+  // hands to nextUrl.
+  const target = `${getRequestOrigin(req)}/signin?error=${encodeURIComponent(reason)}`;
+  const res = NextResponse.redirect(target);
   res.cookies.delete("dq_oauth_state");
   res.cookies.delete("dq_oauth_verifier");
   return res;
@@ -141,10 +142,8 @@ export async function GET(req: NextRequest) {
 
   await setSessionCookie({ sub: userId, email: userEmail });
 
-  const url = req.nextUrl.clone();
-  url.pathname = "/";
-  url.search = "";
-  const res = NextResponse.redirect(url);
+  const target = `${getRequestOrigin(req)}/`;
+  const res = NextResponse.redirect(target);
   res.cookies.delete("dq_oauth_state");
   res.cookies.delete("dq_oauth_verifier");
   return res;
