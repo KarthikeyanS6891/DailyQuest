@@ -1,4 +1,5 @@
 import { Google, generateState, generateCodeVerifier } from "arctic";
+import type { NextRequest } from "next/server";
 
 export type GoogleProfile = {
   sub: string;
@@ -14,10 +15,37 @@ export function isGoogleConfigured(): boolean {
   );
 }
 
-// Resolve the redirect URI from a request origin so the same code works on
-// localhost and on Railway without a separate env var. The exact value
-// returned here MUST be registered as an Authorized redirect URI in the
-// Google Cloud Console OAuth client settings.
+// Build the public-facing origin for a request. Behind a proxy (Railway,
+// Vercel, Render), `req.nextUrl.origin` reflects the internal listening
+// address (e.g. http://localhost:8080), not what the user sees in the
+// browser. We prefer, in order:
+//   1. APP_URL env var (explicit override — most reliable)
+//   2. RAILWAY_PUBLIC_DOMAIN (set automatically on Railway)
+//   3. X-Forwarded-Host + X-Forwarded-Proto headers (standard proxy hints)
+//   4. Host header
+//   5. req.nextUrl.origin (local dev fallback)
+export function getRequestOrigin(req: NextRequest): string {
+  const explicit = process.env.APP_URL?.replace(/\/$/, "");
+  if (explicit) return explicit;
+  const railway = process.env.RAILWAY_PUBLIC_DOMAIN;
+  if (railway) return `https://${railway}`;
+  const fwdHost = req.headers.get("x-forwarded-host");
+  const fwdProto = req.headers.get("x-forwarded-proto")?.split(",")[0].trim();
+  if (fwdHost) {
+    return `${fwdProto || "https"}://${fwdHost}`;
+  }
+  const host = req.headers.get("host");
+  if (host) {
+    const proto = host.startsWith("localhost") || host.startsWith("127.0.0.1")
+      ? "http"
+      : "https";
+    return `${proto}://${host}`;
+  }
+  return req.nextUrl.origin;
+}
+
+// The exact value returned here MUST match a redirect URI registered on
+// the Google Cloud Console OAuth client.
 export function googleRedirectUri(origin: string): string {
   return `${origin.replace(/\/$/, "")}/api/auth/google/callback`;
 }

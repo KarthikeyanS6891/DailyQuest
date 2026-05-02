@@ -7,6 +7,7 @@ import { setSessionCookie } from "@/lib/auth";
 import {
   fetchGoogleProfile,
   getGoogleClient,
+  getRequestOrigin,
   isGoogleConfigured,
 } from "@/lib/google-oauth";
 
@@ -64,7 +65,7 @@ export async function GET(req: NextRequest) {
 
   let accessToken: string;
   try {
-    const tokens = await getGoogleClient(req.nextUrl.origin).validateAuthorizationCode(
+    const tokens = await getGoogleClient(getRequestOrigin(req)).validateAuthorizationCode(
       code,
       verifierCookie,
     );

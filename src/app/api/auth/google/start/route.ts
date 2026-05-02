@@ -3,6 +3,7 @@ import {
   generateCodeVerifier,
   generateState,
   getGoogleClient,
+  getRequestOrigin,
   isGoogleConfigured,
 } from "@/lib/google-oauth";
 
@@ -16,7 +17,7 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const origin = req.nextUrl.origin;
+  const origin = getRequestOrigin(req);
   const google = getGoogleClient(origin);
   const state = generateState();
   const codeVerifier = generateCodeVerifier();
