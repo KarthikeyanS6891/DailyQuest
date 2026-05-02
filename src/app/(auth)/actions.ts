@@ -12,10 +12,32 @@ import {
   setSessionCookie,
   verifyPassword,
 } from "@/lib/auth";
+import { isValidEmail, passwordError } from "@/lib/validation";
 
-const Credentials = z.object({
-  email: z.string().email().max(120),
-  password: z.string().min(8).max(128),
+const SignUpInput = z.object({
+  email: z
+    .string()
+    .max(254)
+    .transform((v) => v.trim().toLowerCase())
+    .refine(isValidEmail, "Enter a valid email address."),
+  password: z
+    .string()
+    .max(128)
+    .superRefine((v, ctx) => {
+      const err = passwordError(v);
+      if (err) ctx.addIssue({ code: z.ZodIssueCode.custom, message: err });
+    }),
+});
+
+// Sign-in only checks credentials are present and email-shaped — never echo
+// password rules back, since we don't know what older accounts looked like.
+const SignInInput = z.object({
+  email: z
+    .string()
+    .max(254)
+    .transform((v) => v.trim().toLowerCase())
+    .refine(isValidEmail, "Enter a valid email address."),
+  password: z.string().min(1).max(128),
 });
 
 function monthIso() {
@@ -45,14 +67,14 @@ async function seedNewUser(userId: string) {
 }
 
 export async function signUpAction(formData: FormData): Promise<{ ok: false; error: string } | void> {
-  const parsed = Credentials.safeParse({
+  const parsed = SignUpInput.safeParse({
     email: formData.get("email"),
     password: formData.get("password"),
   });
   if (!parsed.success) {
-    return { ok: false, error: "Email and 8+ char password required." };
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input." };
   }
-  const email = parsed.data.email.trim().toLowerCase();
+  const { email } = parsed.data;
   const existing = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
   if (existing.length > 0) {
     return { ok: false, error: "An account with that email already exists." };
@@ -71,14 +93,14 @@ export async function signUpAction(formData: FormData): Promise<{ ok: false; err
 }
 
 export async function signInAction(formData: FormData): Promise<{ ok: false; error: string } | void> {
-  const parsed = Credentials.safeParse({
+  const parsed = SignInInput.safeParse({
     email: formData.get("email"),
     password: formData.get("password"),
   });
   if (!parsed.success) {
-    return { ok: false, error: "Enter a valid email and password." };
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input." };
   }
-  const email = parsed.data.email.trim().toLowerCase();
+  const { email } = parsed.data;
   const [u] = await db
     .select({ id: users.id, email: users.email, passwordHash: users.passwordHash })
     .from(users)

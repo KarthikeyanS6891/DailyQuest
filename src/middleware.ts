@@ -32,12 +32,11 @@ export async function middleware(req: NextRequest) {
     url.search = pathname === "/" ? "" : `?next=${encodeURIComponent(pathname + search)}`;
     return NextResponse.redirect(url);
   }
-  if (authed && isPublic) {
-    const url = req.nextUrl.clone();
-    url.pathname = "/";
-    url.search = "";
-    return NextResponse.redirect(url);
-  }
+  // Note: we deliberately do NOT bounce authed users away from /signin and
+  // /signup here. The JWT may verify but the user row could be missing
+  // (e.g. wiped during dev) — bouncing would create a redirect loop. The
+  // signin/signup pages do a DB-backed check and redirect themselves when
+  // the user genuinely exists.
   return NextResponse.next();
 }
 

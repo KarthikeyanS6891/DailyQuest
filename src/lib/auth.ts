@@ -74,7 +74,12 @@ export async function getCurrentUser(): Promise<{ id: string; email: string } | 
 
 export async function requireUser(): Promise<{ id: string; email: string }> {
   const u = await getCurrentUser();
-  if (!u) redirect("/signin");
+  if (!u) {
+    // JWT may verify but the user row could be missing (deleted/wiped).
+    // Clear the stale cookie so middleware doesn't bounce us back here.
+    await clearSessionCookie();
+    redirect("/signin");
+  }
   return u;
 }
 
