@@ -583,6 +583,9 @@ const today = todayIso();
 
   const allTasks = await db
     .select({
+      title: tasksT.title,
+      priority: tasksT.priority,
+      pointsAwarded: tasksT.pointsAwarded,
       status: tasksT.status,
       scheduledFor: tasksT.scheduledFor,
       completedAt: tasksT.completedAt,
@@ -591,9 +594,55 @@ const today = todayIso();
     .where(eq(tasksT.userId, userId));
 
   const completions = await db
-    .select({ date: habitCompletions.date })
+    .select({ date: habitCompletions.date, habitId: habitCompletions.habitId })
     .from(habitCompletions)
     .where(and(eq(habitCompletions.userId, userId), gte(habitCompletions.date, since365)));
+
+  // Build a per-day log of what the user actually completed in the last 14
+  // days — task titles + habit names, plus XP earned. Used by the History
+  // section on the Analytics page.
+  const allHabits = await db
+    .select({ id: habitsT.id, title: habitsT.title })
+    .from(habitsT)
+    .where(eq(habitsT.userId, userId));
+  const habitTitleById = new Map(allHabits.map((h) => [h.id, h.title]));
+
+  type DayLogEntry = {
+    kind: "task" | "habit";
+    title: string;
+    points: number;
+    priority?: number;
+  };
+  const historyMap = new Map<string, { entries: DayLogEntry[]; xp: number }>();
+  for (let i = 13; i >= 0; i--) {
+    historyMap.set(isoDateNDaysAgo(i), { entries: [], xp: 0 });
+  }
+  for (const t of allTasks) {
+    if (t.status !== "done" || !t.completedAt) continue;
+    const k = new Date(t.completedAt).toISOString().slice(0, 10);
+    const bucket = historyMap.get(k);
+    if (!bucket) continue;
+    bucket.entries.push({
+      kind: "task",
+      title: t.title,
+      points: t.pointsAwarded,
+      priority: t.priority,
+    });
+    bucket.xp += t.pointsAwarded;
+  }
+  for (const c of completions) {
+    const bucket = historyMap.get(c.date);
+    if (!bucket) continue;
+    bucket.entries.push({
+      kind: "habit",
+      title: habitTitleById.get(c.habitId) ?? "Habit",
+      points: 20,
+    });
+    bucket.xp += 20;
+  }
+  const dailyHistory = Array.from(historyMap.entries())
+    .map(([date, v]) => ({ date, ...v }))
+    .sort((a, b) => b.date.localeCompare(a.date));
 
   const habitsRows = await db
     .select({ longestStreak: habitsT.longestStreak, title: habitsT.title })
@@ -670,7 +719,17 @@ const today = todayIso();
     insights.push("Complete a few more tasks to unlock personal insights.");
   }
 
-  return { consistency, last30, yearHeatmap, hours, totalDone, insights, today, since30 };
+  return {
+    consistency,
+    last30,
+    yearHeatmap,
+    hours,
+    totalDone,
+    insights,
+    today,
+    since30,
+    dailyHistory,
+  };
 }
 
 // ---------- Settings ----------

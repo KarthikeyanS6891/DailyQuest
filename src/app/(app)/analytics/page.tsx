@@ -1,7 +1,8 @@
-import { Lightbulb, Target, Trophy } from "lucide-react";
+import { CalendarDays, Lightbulb, Target, Trophy } from "lucide-react";
 import { getAnalytics } from "@/store/memory";
 import { Heatmap } from "@/components/Heatmap";
 import { HourHistogram } from "@/components/HourHistogram";
+import { DayHistoryCard } from "@/components/DayHistoryCard";
 import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -100,6 +101,17 @@ export default async function AnalyticsPage() {
       <section className="mb-5 rounded-2xl border border-border bg-surface p-4">
         <h2 className="mb-3 text-sm font-semibold">When you're most productive</h2>
         <HourHistogram hours={a.hours} />
+      </section>
+
+      <section className="mb-5">
+        <h2 className="mb-2 flex items-center gap-1.5 px-1 text-[11px] font-semibold uppercase tracking-widest text-muted">
+          <CalendarDays size={12} /> Recent days
+        </h2>
+        <div className="space-y-1.5">
+          {a.dailyHistory.map((day) => (
+            <DayHistoryCard key={day.date} day={day} />
+          ))}
+        </div>
       </section>
 
       <section className="rounded-2xl border border-accent/30 bg-gradient-to-br from-accent/10 to-surface p-4">
