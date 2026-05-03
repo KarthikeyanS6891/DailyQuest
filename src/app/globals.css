@@ -6,6 +6,18 @@ html, body {
   background: #0b0b10;
   color: #ececf1;
   -webkit-font-smoothing: antialiased;
+  /* Disable iOS pull-to-refresh + Safari rubber-banding when running as
+     a PWA, so it feels native rather than scrollable past the bounds. */
+  overscroll-behavior-y: contain;
+}
+
+/* Standalone PWA: pad the top of every <main> so content clears the
+   notch / status bar. The pages themselves already have pt-8 / sm:pt-10,
+   so we only add the safe-area inset on top of that. */
+@media (display-mode: standalone) {
+  main {
+    padding-top: max(env(safe-area-inset-top), 1rem);
+  }
 }
 
 * {
