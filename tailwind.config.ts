@@ -42,5 +42,11 @@ export default {
       },
     },
   },
-  plugins: [],
+  plugins: [
+    // `standalone:` variant lets us style only when the app is launched
+    // from the home screen as a PWA. e.g. standalone:px-4
+    function ({ addVariant }: { addVariant: (name: string, value: string) => void }) {
+      addVariant("standalone", "@media (display-mode: standalone)");
+    },
+  ],
 } satisfies Config;

@@ -2,7 +2,7 @@ import { Flame, Gift, ListTodo, LogOut, Mail, Repeat } from "lucide-react";
 import { getSettings } from "@/store/memory";
 import { SettingsForm } from "@/components/SettingsForm";
 import { ResetButton } from "@/components/ResetButton";
-import { SignOutButton, SignOutFullWidth } from "@/components/SignOutButton";
+import { SignOutButton } from "@/components/SignOutButton";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { levelForXp } from "@/lib/points";
 import { requireUser } from "@/lib/auth";
@@ -21,11 +21,7 @@ export default async function ProfilePage() {
           <p className="text-xs uppercase tracking-widest text-muted">You</p>
           <h1 className="mt-1 text-2xl font-semibold leading-tight">Your quest log</h1>
         </div>
-        {/* Top-right sign-out, hidden when launched as a PWA — see
-            globals.css. The thumb-friendly version below takes over. */}
-        <div className="hide-in-standalone">
-          <SignOutButton />
-        </div>
+        <SignOutButton />
       </header>
 
       <section className="mb-5 rounded-2xl border border-brand/30 bg-gradient-to-br from-brand/15 via-surface to-accent/10 p-5">
@@ -67,12 +63,7 @@ export default async function ProfilePage() {
         <ResetButton />
       </section>
 
-      {/* Thumb-friendly sign-out, only visible in PWA standalone mode. */}
-      <section className="show-in-standalone mt-5">
-        <SignOutFullWidth />
-      </section>
-
-      <p className="mt-4 hide-in-standalone flex items-center justify-center gap-1 text-[10px] text-muted">
+      <p className="mt-4 flex items-center justify-center gap-1 text-[10px] text-muted">
         <LogOut size={10} /> Use the button up top to sign out.
       </p>
     </main>

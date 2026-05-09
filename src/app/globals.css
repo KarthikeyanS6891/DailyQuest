@@ -50,28 +50,14 @@ html {
   transition: background-color 200ms ease, color 200ms ease;
 }
 
-/* Standalone PWA: pad the top of every <main> so content clears the
-   notch / status bar. The pages themselves already have pt-8 / sm:pt-10,
-   so we only add the safe-area inset on top of that. */
+/* Standalone PWA: pad the top of every <main> so the header (and the
+   sign-out button at top-right) clear the notch / status bar with room
+   to spare. The pages themselves already have pt-8 / sm:pt-10; in PWA
+   mode we add the safe-area inset PLUS extra breathing room so the
+   button isn't crammed against the edge and is easy to thumb-tap. */
 @media (display-mode: standalone) {
   main {
-    padding-top: max(env(safe-area-inset-top), 1rem);
-  }
-}
-
-/* PWA-aware visibility helpers. In a regular browser tab the top-right
-   sign-out button is fine; in standalone mode it's hard to thumb-reach
-   against the safe-area top edge, so we hide that one and reveal a
-   thumb-friendly version at the bottom of the page instead. */
-.show-in-standalone {
-  display: none;
-}
-@media (display-mode: standalone) {
-  .hide-in-standalone {
-    display: none !important;
-  }
-  .show-in-standalone {
-    display: block;
+    padding-top: calc(max(env(safe-area-inset-top), 0.5rem) + 0.75rem);
   }
 }
 
