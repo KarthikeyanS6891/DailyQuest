@@ -15,6 +15,13 @@
       "when": 1777750878610,
       "tag": "0001_acoustic_gressill",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1778346973041,
+      "tag": "0002_mysterious_harrier",
+      "breakpoints": true
     }
   ]
 }

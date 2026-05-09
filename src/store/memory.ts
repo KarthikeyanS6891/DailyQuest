@@ -5,6 +5,7 @@ import {
   habits as habitsT,
   redemptions as redemptionsT,
   rewardLedger,
+  taskCompletions as taskCompletionsT,
   tasks as tasksT,
   users,
 } from "@/db/schema";
@@ -187,19 +188,39 @@ export async function getDayState(userId: string) {
     .where(eq(users.id, userId));
   const tz = u?.timezone || "UTC";
   const today = localTodayStr(tz);
-  const allRows = await db
+  // All of the user's quests show every day. Daily reset: completion state
+  // comes from task_completions for *today's* local date, so yesterday's
+  // strike-throughs don't carry forward.
+  const rows = await db
     .select()
     .from(tasksT)
     .where(eq(tasksT.userId, userId))
     .orderBy(sql`${tasksT.scheduledFor} NULLS LAST`, tasksT.createdAt);
-  // Today's view: only tasks scheduled for today, plus unscheduled tasks
-  // that are still pending or were completed today. Past-day tasks roll
-  // off automatically; they remain visible in the Analytics history.
-  const rows = allRows.filter((r) => {
-    const sched = localDateStr(r.scheduledFor, tz);
-    if (sched) return sched === today;
-    if (r.status === "pending") return true;
-    return localDateStr(r.completedAt, tz) === today;
+  const todaysCompletions = await db
+    .select()
+    .from(taskCompletionsT)
+    .where(
+      and(
+        eq(taskCompletionsT.userId, userId),
+        eq(taskCompletionsT.date, today),
+      ),
+    );
+  const completionByTaskId = new Map(
+    todaysCompletions.map((c) => [c.taskId, c]),
+  );
+  const tasks: Task[] = rows.map((r) => {
+    const c = completionByTaskId.get(r.id);
+    return {
+      id: r.id,
+      title: r.title,
+      priority: r.priority as Priority,
+      estimatedMinutes: r.estimatedMinutes,
+      scheduledFor: asIso(r.scheduledFor),
+      status: c ? "done" : "pending",
+      completedAt: c ? c.completedAt.toISOString() : null,
+      pointsAwarded: c?.pointsAwarded ?? 0,
+      createdAt: r.createdAt.toISOString(),
+    };
   });
   const ledger = await db
     .select()
@@ -208,7 +229,7 @@ export async function getDayState(userId: string) {
     .orderBy(desc(rewardLedger.createdAt))
     .limit(20);
   return {
-    tasks: rows.map(rowToTask),
+    tasks,
     xp: u?.xp ?? 0,
     streak: u?.streak ?? 0,
     ledger: ledger.map((l) => ({
@@ -254,13 +275,29 @@ export async function completeTask(
       .from(tasksT)
       .where(and(eq(tasksT.id, taskId), eq(tasksT.userId, userId)))
       .limit(1);
-    if (!task || task.status === "done") return null;
+    if (!task) return null;
+    const [userRow] = await tx
+      .select({ timezone: users.timezone })
+      .from(users)
+      .where(eq(users.id, userId));
+    const tz = userRow?.timezone || "UTC";
+    const today = localTodayStr(tz);
+    // Already completed today? No-op so double-clicks don't double-credit.
+    const existing = await tx
+      .select({ id: taskCompletionsT.id })
+      .from(taskCompletionsT)
+      .where(
+        and(
+          eq(taskCompletionsT.taskId, taskId),
+          eq(taskCompletionsT.date, today),
+        ),
+      )
+      .limit(1);
+    if (existing.length > 0) return null;
     const awarded = pointsFor(task.priority as Priority, task.estimatedMinutes);
-    const completedAt = new Date();
-    const [updated] = await tx
-      .update(tasksT)
-      .set({ status: "done", completedAt, pointsAwarded: awarded })
-      .where(eq(tasksT.id, taskId))
+    const [completion] = await tx
+      .insert(taskCompletionsT)
+      .values({ userId, taskId, date: today, pointsAwarded: awarded })
       .returning();
     const [u] = await tx
       .update(users)
@@ -275,7 +312,20 @@ export async function completeTask(
       balanceAfter: u.xp,
     });
     await bumpDailyStreak(tx, userId);
-    return { task: rowToTask(updated), awarded };
+    return {
+      task: {
+        id: task.id,
+        title: task.title,
+        priority: task.priority as Priority,
+        estimatedMinutes: task.estimatedMinutes,
+        scheduledFor: asIso(task.scheduledFor),
+        status: "done",
+        completedAt: completion.completedAt.toISOString(),
+        pointsAwarded: awarded,
+        createdAt: task.createdAt.toISOString(),
+      },
+      awarded,
+    };
   });
 }
 
@@ -286,13 +336,25 @@ export async function uncompleteTask(userId: string, taskId: string): Promise<Ta
       .from(tasksT)
       .where(and(eq(tasksT.id, taskId), eq(tasksT.userId, userId)))
       .limit(1);
-    if (!task || task.status !== "done") return null;
-    const refund = task.pointsAwarded;
-    const [updated] = await tx
-      .update(tasksT)
-      .set({ status: "pending", completedAt: null, pointsAwarded: 0 })
-      .where(eq(tasksT.id, taskId))
+    if (!task) return null;
+    const [userRow] = await tx
+      .select({ timezone: users.timezone })
+      .from(users)
+      .where(eq(users.id, userId));
+    const tz = userRow?.timezone || "UTC";
+    const today = localTodayStr(tz);
+    const [completion] = await tx
+      .delete(taskCompletionsT)
+      .where(
+        and(
+          eq(taskCompletionsT.taskId, taskId),
+          eq(taskCompletionsT.userId, userId),
+          eq(taskCompletionsT.date, today),
+        ),
+      )
       .returning();
+    if (!completion) return null;
+    const refund = completion.pointsAwarded;
     const [u] = await tx
       .update(users)
       .set({ xp: sql`GREATEST(0, ${users.xp} - ${refund})` })
@@ -305,7 +367,17 @@ export async function uncompleteTask(userId: string, taskId: string): Promise<Ta
       refId: taskId,
       balanceAfter: u.xp,
     });
-    return rowToTask(updated);
+    return {
+      id: task.id,
+      title: task.title,
+      priority: task.priority as Priority,
+      estimatedMinutes: task.estimatedMinutes,
+      scheduledFor: asIso(task.scheduledFor),
+      status: "pending",
+      completedAt: null,
+      pointsAwarded: 0,
+      createdAt: task.createdAt.toISOString(),
+    };
   });
 }
 
@@ -613,36 +685,53 @@ export async function redeemReward(
 // ---------- Analytics ----------
 
 export async function getAnalytics(userId: string) {
-const today = todayIso();
+  const [u] = await db
+    .select({ timezone: users.timezone })
+    .from(users)
+    .where(eq(users.id, userId));
+  const tz = u?.timezone || "UTC";
+  const today = localTodayStr(tz);
   const since30 = isoDateNDaysAgo(29);
   const since365 = isoDateNDaysAgo(364);
 
   const allTasks = await db
     .select({
+      id: tasksT.id,
       title: tasksT.title,
       priority: tasksT.priority,
-      pointsAwarded: tasksT.pointsAwarded,
-      status: tasksT.status,
-      scheduledFor: tasksT.scheduledFor,
-      completedAt: tasksT.completedAt,
+      createdAt: tasksT.createdAt,
     })
     .from(tasksT)
     .where(eq(tasksT.userId, userId));
+  const taskById = new Map(allTasks.map((t) => [t.id, t]));
 
-  const completions = await db
+  const taskCompletionRows = await db
+    .select({
+      taskId: taskCompletionsT.taskId,
+      date: taskCompletionsT.date,
+      completedAt: taskCompletionsT.completedAt,
+      pointsAwarded: taskCompletionsT.pointsAwarded,
+    })
+    .from(taskCompletionsT)
+    .where(
+      and(
+        eq(taskCompletionsT.userId, userId),
+        gte(taskCompletionsT.date, since365),
+      ),
+    );
+
+  const habitCompRows = await db
     .select({ date: habitCompletions.date, habitId: habitCompletions.habitId })
     .from(habitCompletions)
     .where(and(eq(habitCompletions.userId, userId), gte(habitCompletions.date, since365)));
 
-  // Build a per-day log of what the user actually completed in the last 14
-  // days — task titles + habit names, plus XP earned. Used by the History
-  // section on the Analytics page.
   const allHabits = await db
     .select({ id: habitsT.id, title: habitsT.title })
     .from(habitsT)
     .where(eq(habitsT.userId, userId));
   const habitTitleById = new Map(allHabits.map((h) => [h.id, h.title]));
 
+  // Per-day log for the History section on the Analytics page (last 14 days).
   type DayLogEntry = {
     kind: "task" | "habit";
     title: string;
@@ -653,20 +742,19 @@ const today = todayIso();
   for (let i = 13; i >= 0; i--) {
     historyMap.set(isoDateNDaysAgo(i), { entries: [], xp: 0 });
   }
-  for (const t of allTasks) {
-    if (t.status !== "done" || !t.completedAt) continue;
-    const k = new Date(t.completedAt).toISOString().slice(0, 10);
-    const bucket = historyMap.get(k);
+  for (const c of taskCompletionRows) {
+    const bucket = historyMap.get(c.date);
     if (!bucket) continue;
+    const t = taskById.get(c.taskId);
     bucket.entries.push({
       kind: "task",
-      title: t.title,
-      points: t.pointsAwarded,
-      priority: t.priority,
+      title: t?.title ?? "Quest",
+      points: c.pointsAwarded,
+      priority: t?.priority,
     });
-    bucket.xp += t.pointsAwarded;
+    bucket.xp += c.pointsAwarded;
   }
-  for (const c of completions) {
+  for (const c of habitCompRows) {
     const bucket = historyMap.get(c.date);
     if (!bucket) continue;
     bucket.entries.push({
@@ -687,21 +775,37 @@ const today = todayIso();
     .orderBy(desc(habitsT.longestStreak))
     .limit(1);
 
+  // Last-30-days completion bars: tasks recur daily, so the "available pool"
+  // for any given day is the count of tasks that existed at that point.
+  // Done = task_completions rows for that date.
+  const taskCreatedAtList = allTasks
+    .map((t) => new Date(t.createdAt).toISOString().slice(0, 10))
+    .sort();
+  function tasksAvailableOn(date: string): number {
+    let n = 0;
+    for (const c of taskCreatedAtList) {
+      if (c <= date) n += 1;
+      else break;
+    }
+    return n;
+  }
+  const taskDoneByDate = new Map<string, number>();
+  for (const c of taskCompletionRows) {
+    taskDoneByDate.set(c.date, (taskDoneByDate.get(c.date) ?? 0) + 1);
+  }
   const days: { date: string; total: number; done: number }[] = [];
   for (let i = 29; i >= 0; i--) {
-    days.push({ date: isoDateNDaysAgo(i), total: 0, done: 0 });
+    const d = isoDateNDaysAgo(i);
+    days.push({
+      date: d,
+      total: tasksAvailableOn(d),
+      done: taskDoneByDate.get(d) ?? 0,
+    });
   }
-  const dayMap = new Map(days.map((d) => [d.date, d]));
-  for (const t of allTasks) {
-    const ref = t.completedAt ?? t.scheduledFor;
-    if (!ref) continue;
-    const iso = new Date(ref).toISOString().slice(0, 10);
-    const bucket = dayMap.get(iso);
-    if (!bucket) continue;
-    bucket.total += 1;
-    if (t.status === "done") bucket.done += 1;
-  }
-  const last30 = days.map((d) => ({ ...d, pct: d.total === 0 ? 0 : d.done / d.total }));
+  const last30 = days.map((d) => ({
+    ...d,
+    pct: d.total === 0 ? 0 : Math.min(1, d.done / d.total),
+  }));
 
   const eligible = last30.filter((d) => d.total > 0);
   const consistency =
@@ -712,12 +816,10 @@ const today = todayIso();
         );
 
   const completionsByDate = new Map<string, number>();
-  for (const t of allTasks) {
-    if (t.status !== "done" || !t.completedAt) continue;
-    const k = new Date(t.completedAt).toISOString().slice(0, 10);
-    completionsByDate.set(k, (completionsByDate.get(k) ?? 0) + 1);
+  for (const c of taskCompletionRows) {
+    completionsByDate.set(c.date, (completionsByDate.get(c.date) ?? 0) + 1);
   }
-  for (const c of completions) {
+  for (const c of habitCompRows) {
     completionsByDate.set(c.date, (completionsByDate.get(c.date) ?? 0) + 1);
   }
   const yearHeatmap: { date: string; pct: number }[] = [];
@@ -727,13 +829,11 @@ const today = todayIso();
   }
 
   const hours = Array.from({ length: 24 }, () => 0);
-  for (const t of allTasks) {
-    if (t.status === "done" && t.completedAt) {
-      hours[new Date(t.completedAt).getHours()] += 1;
-    }
+  for (const c of taskCompletionRows) {
+    hours[new Date(c.completedAt).getHours()] += 1;
   }
 
-  const totalDone = allTasks.filter((t) => t.status === "done").length;
+  const totalDone = taskCompletionRows.length;
   const longestHabit = habitsRows[0];
 
   const insights: string[] = [];

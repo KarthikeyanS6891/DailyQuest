@@ -67,6 +67,25 @@ export const habits = pgTable("habits", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// Per-task per-day completion record. Source of truth for "did I do this
+// quest today?" — keeps tasks visible every day with state that resets at
+// midnight in the user's timezone.
+export const taskCompletions = pgTable(
+  "task_completions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    taskId: uuid("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    date: date("date").notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }).notNull().defaultNow(),
+    pointsAwarded: integer("points_awarded").notNull().default(0),
+  },
+  (t) => ({
+    uniqTaskDate: uniqueIndex("task_completions_task_date_uniq").on(t.taskId, t.date),
+    byUserDate: index("task_completions_user_date_idx").on(t.userId, t.date),
+  }),
+);
+
 export const habitCompletions = pgTable(
   "habit_completions",
   {
