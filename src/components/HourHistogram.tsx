@@ -14,7 +14,7 @@ export function HourHistogram({ hours }: { hours: number[] }) {
                   ? "bg-gradient-to-t from-brand to-accent"
                   : v > 0
                     ? "bg-brand/40"
-                    : "bg-white/[0.04]")
+                    : "bg-tint/[0.04]")
               }
               style={{ height: `${Math.max(2, pct)}%` }}
               title={`${h}:00 — ${v} task${v === 1 ? "" : "s"}`}

@@ -68,7 +68,7 @@ export function QuickAdd() {
           "relative overflow-hidden rounded-2xl border bg-gradient-to-br from-surface to-surface2 p-3 transition",
           effectiveTitle
             ? "border-brand/60 shadow-glow"
-            : "border-border hover:border-white/20",
+            : "border-border hover:border-tint/20",
         )}
       >
         {!effectiveTitle ? (
@@ -125,7 +125,7 @@ export function QuickAdd() {
               "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition",
               effectiveTitle
                 ? "bg-brand text-white hover:bg-brand-dim"
-                : "bg-white/[0.04] text-muted",
+                : "bg-tint/[0.04] text-muted",
               pending && "opacity-60",
             )}
             aria-label="Add quest"
@@ -150,9 +150,9 @@ export function QuickAdd() {
                     ? p === 1
                       ? "border-brand bg-brand text-white"
                       : p === 2
-                        ? "border-white/30 bg-white/10 text-text"
-                        : "border-white/10 bg-white/[0.04] text-muted"
-                    : "border-border bg-transparent text-muted hover:border-white/20 hover:text-text",
+                        ? "border-tint/30 bg-tint/10 text-text"
+                        : "border-tint/10 bg-tint/[0.04] text-muted"
+                    : "border-border bg-transparent text-muted hover:border-tint/20 hover:text-text",
                 )}
               >
                 P{p}
@@ -175,7 +175,7 @@ export function QuickAdd() {
                   "rounded-full border px-2 py-1 text-xs transition",
                   active
                     ? "border-brand bg-brand/20 text-brand"
-                    : "border-border text-muted hover:border-white/20 hover:text-text",
+                    : "border-border text-muted hover:border-tint/20 hover:text-text",
                 )}
               >
                 {m}m

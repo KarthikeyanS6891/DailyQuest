@@ -24,8 +24,8 @@ export type ClientTask = {
 
 const priorityStyles: Record<Priority, string> = {
   1: "bg-brand/15 text-brand border-brand/30",
-  2: "bg-white/5 text-text border-white/10",
-  3: "bg-white/[0.03] text-muted border-white/5",
+  2: "bg-tint/5 text-text border-tint/10",
+  3: "bg-tint/[0.03] text-muted border-tint/5",
 };
 
 const priorityLabel: Record<Priority, string> = { 1: "P1", 2: "P2", 3: "P3" };
@@ -121,7 +121,7 @@ export function TaskItem({ task }: { task: ClientTask }) {
         <span
           className={cn(
             "rounded-full px-2 py-1 text-[11px] font-semibold tabular-nums",
-            done ? "bg-success/15 text-success" : "bg-white/[0.04] text-muted",
+            done ? "bg-success/15 text-success" : "bg-tint/[0.04] text-muted",
           )}
         >
           {done ? `+${task.pointsAwarded}` : `+${willEarn}`}
@@ -135,7 +135,7 @@ export function TaskItem({ task }: { task: ClientTask }) {
               else await deleteTaskAction(task.id);
             })
           }
-          className="rounded-md p-1.5 text-muted opacity-0 transition hover:bg-white/5 hover:text-text group-hover:opacity-100"
+          className="rounded-md p-1.5 text-muted opacity-0 transition hover:bg-tint/5 hover:text-text group-hover:opacity-100"
         >
           {done ? <Undo2 size={14} /> : <Trash2 size={14} />}
         </button>

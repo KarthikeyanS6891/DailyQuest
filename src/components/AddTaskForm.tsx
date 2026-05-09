@@ -15,7 +15,7 @@ export function AddTaskForm() {
       {!open ? (
         <button
           onClick={() => setOpen(true)}
-          className="flex w-full items-center gap-2 px-4 py-3 text-sm text-muted transition hover:bg-white/[0.03] hover:text-text"
+          className="flex w-full items-center gap-2 px-4 py-3 text-sm text-muted transition hover:bg-tint/[0.03] hover:text-text"
         >
           <Plus size={16} />
           Add a task

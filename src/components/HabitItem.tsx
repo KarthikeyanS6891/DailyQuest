@@ -77,7 +77,7 @@ export function HabitItem({ habit }: { habit: ClientHabit }) {
         <div className="flex flex-col items-end gap-1">
           <span className={cn(
             "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold",
-            habit.currentStreak > 0 ? "bg-accent/15 text-accent" : "bg-white/[0.04] text-muted",
+            habit.currentStreak > 0 ? "bg-accent/15 text-accent" : "bg-tint/[0.04] text-muted",
           )}>
             <Flame size={11} /> {habit.currentStreak}
           </span>
@@ -93,10 +93,10 @@ export function HabitItem({ habit }: { habit: ClientHabit }) {
             className={cn(
               "h-3 flex-1 rounded-sm transition",
               !d.due
-                ? "bg-white/[0.025]"
+                ? "bg-tint/[0.025]"
                 : d.done
                   ? "bg-gradient-to-t from-brand to-accent"
-                  : "bg-white/[0.06]",
+                  : "bg-tint/[0.06]",
             )}
           />
         ))}
@@ -114,7 +114,7 @@ export function HabitItem({ habit }: { habit: ClientHabit }) {
           }
           disabled={pending || habit.completedToday || habit.freezesRemaining <= 0}
           className={cn(
-            "inline-flex items-center gap-1 rounded-full border border-border px-2 py-1 text-[11px] text-muted transition hover:border-white/20 hover:text-text",
+            "inline-flex items-center gap-1 rounded-full border border-border px-2 py-1 text-[11px] text-muted transition hover:border-tint/20 hover:text-text",
             (habit.completedToday || habit.freezesRemaining <= 0) && "opacity-40",
           )}
         >
@@ -123,7 +123,7 @@ export function HabitItem({ habit }: { habit: ClientHabit }) {
         <button
           onClick={() => start(async () => { await deleteHabitAction(habit.id); })}
           disabled={pending}
-          className="rounded-md p-1.5 text-muted opacity-0 transition hover:bg-white/5 hover:text-danger group-hover:opacity-100"
+          className="rounded-md p-1.5 text-muted opacity-0 transition hover:bg-tint/5 hover:text-danger group-hover:opacity-100"
           aria-label="Delete habit"
         >
           <Trash2 size={13} />

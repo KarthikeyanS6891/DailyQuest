@@ -2,13 +2,52 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Theme palettes. Each token is a comma-less RGB triplet so Tailwind's
+   alpha modifier (rgb(... / <alpha>)) works. Dark is the default; the
+   .light class on <html> flips everything. */
+:root,
+:root.dark {
+  --color-bg: 11 11 16;
+  --color-surface: 21 21 29;
+  --color-surface2: 29 29 40;
+  --color-border: 42 42 54;
+  --color-text: 236 236 241;
+  --color-muted: 139 139 160;
+  --color-tint: 255 255 255;
+  --color-brand: 124 92 255;
+  --color-brand-dim: 91 63 217;
+  --color-accent: 245 180 0;
+  --color-success: 34 197 94;
+  --color-danger: 239 68 68;
+}
+
+:root.light {
+  --color-bg: 249 249 251;
+  --color-surface: 255 255 255;
+  --color-surface2: 241 241 245;
+  --color-border: 226 226 232;
+  --color-text: 21 21 29;
+  --color-muted: 107 107 128;
+  --color-tint: 21 21 29; /* dark overlay for alpha highlights on light bg */
+  --color-brand: 124 92 255;
+  --color-brand-dim: 91 63 217;
+  --color-accent: 217 159 0; /* slightly deeper gold for contrast on white */
+  --color-success: 22 163 74;
+  --color-danger: 220 38 38;
+}
+
 html, body {
-  background: #0b0b10;
-  color: #ececf1;
+  background: rgb(var(--color-bg));
+  color: rgb(var(--color-text));
   -webkit-font-smoothing: antialiased;
   /* Disable iOS pull-to-refresh + Safari rubber-banding when running as
      a PWA, so it feels native rather than scrollable past the bounds. */
   overscroll-behavior-y: contain;
+}
+
+/* Smooth crossfade when toggling themes. */
+html {
+  transition: background-color 200ms ease, color 200ms ease;
 }
 
 /* Standalone PWA: pad the top of every <main> so content clears the

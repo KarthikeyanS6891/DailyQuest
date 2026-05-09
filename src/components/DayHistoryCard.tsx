@@ -61,7 +61,7 @@ export function DayHistoryCard({ day }: { day: DayHistory }) {
         disabled={isEmpty}
         className={cn(
           "flex w-full items-center gap-3 px-3 py-2.5 text-left transition",
-          !isEmpty && "hover:bg-white/[0.02]",
+          !isEmpty && "hover:bg-tint/[0.02]",
         )}
       >
         <div className="flex flex-col items-center justify-center rounded-lg bg-surface2 px-2.5 py-1 text-center">
@@ -142,7 +142,7 @@ export function DayHistoryCard({ day }: { day: DayHistory }) {
                     <Repeat size={13} className="shrink-0 text-brand" />
                   )}
                   <span className="min-w-0 flex-1 truncate">{e.title}</span>
-                  <span className="shrink-0 rounded-full bg-white/[0.04] px-1.5 py-0.5 text-[10px] font-semibold text-muted">
+                  <span className="shrink-0 rounded-full bg-tint/[0.04] px-1.5 py-0.5 text-[10px] font-semibold text-muted">
                     +{e.points}
                   </span>
                 </li>

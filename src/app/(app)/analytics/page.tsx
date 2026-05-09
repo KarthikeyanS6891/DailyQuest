@@ -67,7 +67,7 @@ export default async function AnalyticsPage() {
                         ? "bg-brand/40"
                         : d.total > 0
                           ? "bg-danger/20"
-                          : "bg-white/[0.04]")
+                          : "bg-tint/[0.04]")
                   }
                   style={{ height: `${Math.max(3, pct * 100)}%` }}
                   title={`${d.date} — ${d.done}/${d.total}`}
@@ -88,7 +88,7 @@ export default async function AnalyticsPage() {
         <div className="mt-3 flex items-center justify-between text-[10px] text-muted">
           <span>less</span>
           <div className="flex gap-1">
-            <span className="h-2.5 w-2.5 rounded-sm bg-white/[0.04]" />
+            <span className="h-2.5 w-2.5 rounded-sm bg-tint/[0.04]" />
             <span className="h-2.5 w-2.5 rounded-sm bg-brand/30" />
             <span className="h-2.5 w-2.5 rounded-sm bg-brand/50" />
             <span className="h-2.5 w-2.5 rounded-sm bg-brand/70" />

@@ -51,7 +51,7 @@ export function RewardCard({ reward, balance }: { reward: ClientReward; balance:
       <div className="flex items-start gap-3">
         <div className={cn(
           "flex h-12 w-12 items-center justify-center rounded-xl text-2xl",
-          affordable ? "bg-brand/15" : "bg-white/[0.04]",
+          affordable ? "bg-brand/15" : "bg-tint/[0.04]",
         )}>
           {reward.emoji}
         </div>
@@ -66,7 +66,7 @@ export function RewardCard({ reward, balance }: { reward: ClientReward; balance:
         </div>
         <div className={cn(
           "flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-xs font-bold",
-          affordable ? "bg-brand text-white" : "bg-white/[0.04] text-muted",
+          affordable ? "bg-brand text-white" : "bg-tint/[0.04] text-muted",
         )}>
           {affordable ? <Sparkles size={11} /> : <Lock size={11} />}
           {reward.cost}

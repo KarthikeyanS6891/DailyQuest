@@ -1,23 +1,34 @@
 import type { Config } from "tailwindcss";
 
+// Each color resolves to `rgb(var(--color-X) / <alpha-value>)`. The actual
+// values live in src/app/globals.css under :root (dark default) and .light
+// — switching themes is one className change on <html>.
+function v(name: string) {
+  return `rgb(var(--color-${name}) / <alpha-value>)`;
+}
+
 export default {
   content: ["./src/**/*.{ts,tsx}"],
+  darkMode: "class",
   theme: {
     extend: {
       colors: {
-        bg: "#0b0b10",
-        surface: "#15151d",
-        surface2: "#1d1d28",
-        border: "#2a2a36",
-        text: "#ececf1",
-        muted: "#8b8ba0",
+        bg: v("bg"),
+        surface: v("surface"),
+        surface2: v("surface2"),
+        border: v("border"),
+        text: v("text"),
+        muted: v("muted"),
+        // `tint` is white in dark mode, near-black in light mode. Use it
+        // anywhere you want a subtle alpha highlight that adapts.
+        tint: v("tint"),
         brand: {
-          DEFAULT: "#7c5cff",
-          dim: "#5b3fd9",
+          DEFAULT: v("brand"),
+          dim: v("brand-dim"),
         },
-        accent: "#f5b400",
-        success: "#22c55e",
-        danger: "#ef4444",
+        accent: v("accent"),
+        success: v("success"),
+        danger: v("danger"),
       },
       fontFamily: {
         sans: ["ui-sans-serif", "system-ui", "-apple-system", "Segoe UI", "Roboto", "sans-serif"],

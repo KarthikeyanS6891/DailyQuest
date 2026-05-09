@@ -18,7 +18,7 @@ export function Heatmap({ data }: { data: { date: string; pct: number }[] }) {
 
   const shade = (pct: number) => {
     if (pct < 0) return "bg-transparent";
-    if (pct === 0) return "bg-white/[0.04]";
+    if (pct === 0) return "bg-tint/[0.04]";
     if (pct < 0.25) return "bg-brand/30";
     if (pct < 0.5) return "bg-brand/50";
     if (pct < 0.75) return "bg-brand/70";

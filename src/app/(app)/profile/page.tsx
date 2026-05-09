@@ -3,6 +3,7 @@ import { getSettings } from "@/store/memory";
 import { SettingsForm } from "@/components/SettingsForm";
 import { ResetButton } from "@/components/ResetButton";
 import { SignOutButton } from "@/components/SignOutButton";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { levelForXp } from "@/lib/points";
 import { requireUser } from "@/lib/auth";
 
@@ -42,6 +43,13 @@ export default async function ProfilePage() {
         <Stat icon={<ListTodo size={14} className="text-brand" />} label="Tasks" value={data.totalTasks} />
         <Stat icon={<Repeat size={14} className="text-brand" />} label="Habits" value={data.totalHabits} />
         <Stat icon={<Gift size={14} className="text-accent" />} label="Redeemed" value={data.totalRedeemed} />
+      </section>
+
+      <section className="mb-5">
+        <h2 className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-widest text-muted">
+          Appearance
+        </h2>
+        <ThemeToggle />
       </section>
 
       <section className="mb-5">
