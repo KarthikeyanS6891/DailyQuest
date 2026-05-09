@@ -103,9 +103,6 @@ export default async function TodayPage() {
         )}
       </section>
 
-      <footer className="mt-10 text-center text-[11px] text-muted">
-        DailyQuest · MVP scaffold · in-memory store (resets on server restart)
-      </footer>
     </main>
   );
 }

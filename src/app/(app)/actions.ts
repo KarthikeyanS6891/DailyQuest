@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import {
   completeTask,
@@ -8,6 +9,8 @@ import {
   deleteTask,
   uncompleteTask,
 } from "@/store/memory";
+import { db } from "@/db/client";
+import { users } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import type { Priority } from "@/lib/points";
 
@@ -70,4 +73,25 @@ export async function deleteTaskAction(taskId: string) {
   revalidatePath("/");
   revalidatePath("/analytics");
   return { ok: true };
+}
+
+// Called once per browser visit by <TimezoneSync /> in the (app) layout.
+// Updates the stored timezone if it differs so all "is this today?"
+// computations use the user's actual local day.
+export async function updateTimezoneAction(tz: string) {
+  if (!tz || typeof tz !== "string" || tz.length > 64) return { changed: false };
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+  } catch {
+    return { changed: false };
+  }
+  const { id: userId } = await requireUser();
+  const [u] = await db
+    .select({ timezone: users.timezone })
+    .from(users)
+    .where(eq(users.id, userId));
+  if (u?.timezone === tz) return { changed: false };
+  await db.update(users).set({ timezone: tz }).where(eq(users.id, userId));
+  revalidatePath("/", "layout");
+  return { changed: true };
 }

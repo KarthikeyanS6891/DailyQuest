@@ -92,6 +92,26 @@ function asIso(d: Date | null | undefined): string | null {
   return d ? new Date(d).toISOString() : null;
 }
 
+// Local-date string (YYYY-MM-DD) for a given instant in a given tz. Used to
+// answer "is this task scheduled for today?" without UTC vs local confusion.
+function localDateStr(d: Date | null | undefined, tz: string): string | null {
+  if (!d) return null;
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(d));
+}
+
+function localTodayStr(tz: string): string {
+  return localDateStr(new Date(), tz)!;
+}
+
+function localYesterdayStr(tz: string): string {
+  return localDateStr(new Date(Date.now() - 86_400_000), tz)!;
+}
+
 // ---------- Reward catalog (static) ----------
 
 export const REWARD_CATALOG: Reward[] = [
@@ -114,13 +134,18 @@ const REWARD_BY_ID: Map<string, Reward> = new Map(REWARD_CATALOG.map((r) => [r.i
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 async function bumpDailyStreak(tx: Tx, userId: string): Promise<void> {
-  const today = todayIso();
-  const yesterday = isoDateNDaysAgo(1);
   const [u] = await tx
-    .select({ streak: users.streak, lastCompletionDate: users.lastCompletionDate })
+    .select({
+      streak: users.streak,
+      lastCompletionDate: users.lastCompletionDate,
+      timezone: users.timezone,
+    })
     .from(users)
     .where(eq(users.id, userId));
   if (!u) return;
+  const tz = u.timezone || "UTC";
+  const today = localTodayStr(tz);
+  const yesterday = localYesterdayStr(tz);
   if (u.lastCompletionDate === today) return;
   const nextStreak = u.lastCompletionDate === yesterday ? u.streak + 1 : 1;
   await tx
@@ -156,15 +181,26 @@ function rowToTask(r: TaskRow): Task {
 }
 
 export async function getDayState(userId: string) {
-const [u] = await db
-    .select({ xp: users.xp, streak: users.streak })
+  const [u] = await db
+    .select({ xp: users.xp, streak: users.streak, timezone: users.timezone })
     .from(users)
     .where(eq(users.id, userId));
-  const rows = await db
+  const tz = u?.timezone || "UTC";
+  const today = localTodayStr(tz);
+  const allRows = await db
     .select()
     .from(tasksT)
     .where(eq(tasksT.userId, userId))
     .orderBy(sql`${tasksT.scheduledFor} NULLS LAST`, tasksT.createdAt);
+  // Today's view: only tasks scheduled for today, plus unscheduled tasks
+  // that are still pending or were completed today. Past-day tasks roll
+  // off automatically; they remain visible in the Analytics history.
+  const rows = allRows.filter((r) => {
+    const sched = localDateStr(r.scheduledFor, tz);
+    if (sched) return sched === today;
+    if (r.status === "pending") return true;
+    return localDateStr(r.completedAt, tz) === today;
+  });
   const ledger = await db
     .select()
     .from(rewardLedger)
