@@ -59,6 +59,22 @@ html {
   }
 }
 
+/* PWA-aware visibility helpers. In a regular browser tab the top-right
+   sign-out button is fine; in standalone mode it's hard to thumb-reach
+   against the safe-area top edge, so we hide that one and reveal a
+   thumb-friendly version at the bottom of the page instead. */
+.show-in-standalone {
+  display: none;
+}
+@media (display-mode: standalone) {
+  .hide-in-standalone {
+    display: none !important;
+  }
+  .show-in-standalone {
+    display: block;
+  }
+}
+
 * {
   box-sizing: border-box;
 }
