@@ -18,19 +18,32 @@ export type DayHistory = {
   xp: number;
 };
 
-function isoToday() {
-  return new Date().toISOString().slice(0, 10);
+// Today's date in the user's timezone. Without this, browsers across
+// timezones disagree past midnight: e.g. an IST user at 01:00 still sees
+// "Yesterday" labeled as Today because `new Date().toISOString()` uses UTC.
+function todayInTz(tz: string) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
 }
 
-function isoYesterday() {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  return d.toISOString().slice(0, 10);
+function yesterdayInTz(tz: string) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(Date.now() - 86_400_000));
 }
 
-function formatLabel(iso: string) {
-  if (iso === isoToday()) return "Today";
-  if (iso === isoYesterday()) return "Yesterday";
+function formatLabel(iso: string, tz: string) {
+  if (iso === todayInTz(tz)) return "Today";
+  if (iso === yesterdayInTz(tz)) return "Yesterday";
+  // The `iso` (YYYY-MM-DD) already represents a specific calendar day,
+  // so parse as a local-time wall-clock and format the weekday/month/day.
   const d = new Date(iso + "T00:00:00");
   return d.toLocaleDateString(undefined, {
     weekday: "short",
@@ -39,13 +52,19 @@ function formatLabel(iso: string) {
   });
 }
 
-export function DayHistoryCard({ day }: { day: DayHistory }) {
+export function DayHistoryCard({
+  day,
+  timezone,
+}: {
+  day: DayHistory;
+  timezone: string;
+}) {
   const [open, setOpen] = useState(false);
   const count = day.entries.length;
   const isEmpty = count === 0;
   const taskCount = day.entries.filter((e) => e.kind === "task").length;
   const habitCount = day.entries.filter((e) => e.kind === "habit").length;
-  const isToday = day.date === isoToday();
+  const isToday = day.date === todayInTz(timezone);
 
   return (
     <motion.div
@@ -77,7 +96,7 @@ export function DayHistoryCard({ day }: { day: DayHistory }) {
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 text-sm font-medium">
-            {formatLabel(day.date)}
+            {formatLabel(day.date, timezone)}
             {isToday ? (
               <span className="rounded-full bg-brand/15 px-1.5 py-0.5 text-[10px] font-semibold text-brand">
                 live

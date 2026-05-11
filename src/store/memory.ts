@@ -157,6 +157,14 @@ export function todayInTz(tz: string): string {
   return localTodayStr(tz);
 }
 
+// N days ago in the user's timezone. Use this instead of isoDateNDaysAgo
+// when the resulting date string will be compared against per-day records
+// (task_completions, habit_completions) — those are stored in the user's
+// local day, so the buckets must match.
+function localDateNDaysAgo(n: number, tz: string): string {
+  return localDateStr(new Date(Date.now() - n * 86_400_000), tz)!;
+}
+
 // ---------- Reward catalog (static) ----------
 
 export const REWARD_CATALOG: Reward[] = [
@@ -736,8 +744,11 @@ export async function getAnalytics(userId: string) {
     .where(eq(users.id, userId));
   const tz = u?.timezone || "UTC";
   const today = localTodayStr(tz);
-  const since30 = isoDateNDaysAgo(29);
-  const since365 = isoDateNDaysAgo(364);
+  // All "N days ago" dates in this function are now in the user's tz so
+  // the buckets line up with task_completions / habit_completions, which
+  // store dates as the user's local day.
+  const since30 = localDateNDaysAgo(29, tz);
+  const since365 = localDateNDaysAgo(364, tz);
 
   const allTasks = await db
     .select({
@@ -785,7 +796,7 @@ export async function getAnalytics(userId: string) {
   };
   const historyMap = new Map<string, { entries: DayLogEntry[]; xp: number }>();
   for (let i = 13; i >= 0; i--) {
-    historyMap.set(isoDateNDaysAgo(i), { entries: [], xp: 0 });
+    historyMap.set(localDateNDaysAgo(i, tz), { entries: [], xp: 0 });
   }
   for (const c of taskCompletionRows) {
     const bucket = historyMap.get(c.date);
@@ -840,7 +851,7 @@ export async function getAnalytics(userId: string) {
   }
   const days: { date: string; total: number; done: number }[] = [];
   for (let i = 29; i >= 0; i--) {
-    const d = isoDateNDaysAgo(i);
+    const d = localDateNDaysAgo(i, tz);
     days.push({
       date: d,
       total: tasksAvailableOn(d),
@@ -869,7 +880,7 @@ export async function getAnalytics(userId: string) {
   }
   const yearHeatmap: { date: string; pct: number }[] = [];
   for (let i = 364; i >= 0; i--) {
-    const d = isoDateNDaysAgo(i);
+    const d = localDateNDaysAgo(i, tz);
     yearHeatmap.push({ date: d, pct: Math.min(1, (completionsByDate.get(d) ?? 0) / 5) });
   }
 
@@ -910,6 +921,7 @@ export async function getAnalytics(userId: string) {
     today,
     since30,
     dailyHistory,
+    timezone: tz,
   };
 }
 

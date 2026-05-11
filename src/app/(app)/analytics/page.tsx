@@ -109,7 +109,7 @@ export default async function AnalyticsPage() {
         </h2>
         <div className="space-y-1.5">
           {a.dailyHistory.map((day) => (
-            <DayHistoryCard key={day.date} day={day} />
+            <DayHistoryCard key={day.date} day={day} timezone={a.timezone} />
           ))}
         </div>
       </section>

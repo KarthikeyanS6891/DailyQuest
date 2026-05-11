@@ -13,12 +13,15 @@ export default async function TodayPage() {
   const { id: userId } = await requireUser();
   const { tasks, xp, streak, timezone } = await getDayState(userId);
 
-  const today = new Date();
-  const headline = today.toLocaleDateString(undefined, {
+  // Format the headline date in the user's timezone, not the server's.
+  // Railway runs in UTC; without this, IST users past midnight still see
+  // "yesterday" in the header.
+  const headline = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
     weekday: "long",
     month: "long",
     day: "numeric",
-  });
+  }).format(new Date());
 
   const totalEffort = tasks.reduce((s, t) => s + t.estimatedMinutes, 0);
   const doneEffort = tasks
