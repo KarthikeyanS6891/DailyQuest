@@ -113,6 +113,50 @@ function localYesterdayStr(tz: string): string {
   return localDateStr(new Date(Date.now() - 86_400_000), tz)!;
 }
 
+// Given a wall-clock date (YYYY-MM-DD) + time (HH:MM) in a target timezone,
+// return the UTC Date instant that represents that moment. Used when a user
+// types "9:00" — they mean 9:00 in their local time, not on the server.
+//
+// Algorithm: take the wall-clock as if it were UTC, ask Intl what wall-clock
+// THAT instant is in the target tz, and the difference is the tz offset.
+// Subtract the offset from the UTC guess to land on the real UTC instant.
+export function localTimeToUtc(
+  dateIso: string,
+  timeHHMM: string,
+  tz: string,
+): Date {
+  const guess = new Date(`${dateIso}T${timeHHMM}:00.000Z`);
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(guess);
+  const map: Record<string, string> = {};
+  for (const p of parts) if (p.type !== "literal") map[p.type] = p.value;
+  // Intl can return "24" for midnight — normalize.
+  const hour = map.hour === "24" ? "00" : map.hour;
+  const tzAsUtcMs = Date.UTC(
+    Number(map.year),
+    Number(map.month) - 1,
+    Number(map.day),
+    Number(hour),
+    Number(map.minute),
+    Number(map.second),
+  );
+  const offsetMs = tzAsUtcMs - guess.getTime();
+  return new Date(guess.getTime() - offsetMs);
+}
+
+// Public: today's local date string (YYYY-MM-DD) in the given timezone.
+export function todayInTz(tz: string): string {
+  return localTodayStr(tz);
+}
+
 // ---------- Reward catalog (static) ----------
 
 export const REWARD_CATALOG: Reward[] = [
@@ -232,6 +276,7 @@ export async function getDayState(userId: string) {
     tasks,
     xp: u?.xp ?? 0,
     streak: u?.streak ?? 0,
+    timezone: tz,
     ledger: ledger.map((l) => ({
       id: l.id,
       delta: l.delta,

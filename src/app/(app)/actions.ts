@@ -7,6 +7,8 @@ import {
   completeTask,
   createTask,
   deleteTask,
+  localTimeToUtc,
+  todayInTz,
   uncompleteTask,
 } from "@/store/memory";
 import { db } from "@/db/client";
@@ -48,10 +50,16 @@ export async function addTaskAction(formData: FormData) {
   const { title, priority, estimatedMinutes, time } = parsed.data;
   let scheduledFor: string | null = null;
   if (time && /^\d{2}:\d{2}$/.test(time)) {
-    const [h, m] = time.split(":").map(Number);
-    const d = new Date();
-    d.setHours(h, m, 0, 0);
-    scheduledFor = d.toISOString();
+    // Interpret HH:MM in the user's own timezone, not the server's.
+    // Without this, "09:00" typed in IST would be stored as 09:00 UTC
+    // (= 14:30 IST) — the user would see the wrong time displayed back.
+    const [u] = await db
+      .select({ tz: users.timezone })
+      .from(users)
+      .where(eq(users.id, userId));
+    const tz = u?.tz || "UTC";
+    const today = todayInTz(tz);
+    scheduledFor = localTimeToUtc(today, time, tz).toISOString();
   }
   try {
     await createTask(userId, {

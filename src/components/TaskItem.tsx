@@ -30,18 +30,32 @@ const priorityStyles: Record<Priority, string> = {
 
 const priorityLabel: Record<Priority, string> = { 1: "P1", 2: "P2", 3: "P3" };
 
-// Render in a stable format (HH:MM, 24h) regardless of locale — Node on
-// the server vs the browser otherwise return different strings (e.g.
-// "7:00" vs "7:00 AM"), which trips a React hydration mismatch.
-function formatTime(iso: string | null) {
+// Render in a stable HH:MM 24h format in the USER's timezone, not the
+// server's. Without this, a task stored as 03:30 UTC (which represents
+// 09:00 IST) would render as "03:30" on the Railway server (UTC) and
+// "09:00" on the browser, causing both a hydration mismatch AND a
+// wrong time display.
+function formatTime(iso: string | null, tz: string) {
   if (!iso) return "Anytime";
-  const d = new Date(iso);
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mm = String(d.getMinutes()).padStart(2, "0");
-  return `${hh}:${mm}`;
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date(iso));
+  const map: Record<string, string> = {};
+  for (const p of parts) if (p.type !== "literal") map[p.type] = p.value;
+  const hh = map.hour === "24" ? "00" : map.hour;
+  return `${hh}:${map.minute}`;
 }
 
-export function TaskItem({ task }: { task: ClientTask }) {
+export function TaskItem({
+  task,
+  timezone,
+}: {
+  task: ClientTask;
+  timezone: string;
+}) {
   const [pending, start] = useTransition();
   const [celebrate, setCelebrate] = useState(false);
   const done = task.status === "done";
@@ -107,7 +121,7 @@ export function TaskItem({ task }: { task: ClientTask }) {
           {task.title}
         </div>
         <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted">
-          <span>{formatTime(task.scheduledFor)}</span>
+          <span>{formatTime(task.scheduledFor, timezone)}</span>
           <span className="text-border">•</span>
           <span>{task.estimatedMinutes}m</span>
           <span className="text-border">•</span>

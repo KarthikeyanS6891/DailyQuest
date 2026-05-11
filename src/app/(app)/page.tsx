@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 
 export default async function TodayPage() {
   const { id: userId } = await requireUser();
-  const { tasks, xp, streak } = await getDayState(userId);
+  const { tasks, xp, streak, timezone } = await getDayState(userId);
 
   const today = new Date();
   const headline = today.toLocaleDateString(undefined, {
@@ -99,7 +99,7 @@ export default async function TodayPage() {
             <div className="mt-1 text-xs">Type above and press ↵.</div>
           </div>
         ) : (
-          tasks.map((t) => <TaskItem key={t.id} task={t} />)
+          tasks.map((t) => <TaskItem key={t.id} task={t} timezone={timezone} />)
         )}
       </section>
 
