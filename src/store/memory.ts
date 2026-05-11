@@ -466,12 +466,18 @@ function isHabitDueOn(habit: Habit, isoDate: string): boolean {
   return habit.cadence.days.includes(dayIndex(isoDate));
 }
 
-function calcStreak(habit: Habit, completionDates: Set<string>): { current: number; longest: number } {
+function calcStreak(
+  habit: Habit,
+  completionDates: Set<string>,
+  tz: string,
+): { current: number; longest: number } {
   let cur = 0;
   let longest = habit.longestStreak;
   let stillCurrent = true;
   for (let i = 0; i < 365; i++) {
-    const d = isoDateNDaysAgo(i);
+    // Walk back day by day in the USER's timezone, so streaks align with
+    // task_completions / habit_completions which store the user's local day.
+    const d = localDateNDaysAgo(i, tz);
     if (!isHabitDueOn(habit, d)) continue;
     if (completionDates.has(d)) {
       cur += 1;
@@ -489,7 +495,12 @@ function calcStreak(habit: Habit, completionDates: Set<string>): { current: numb
 }
 
 export async function getHabits(userId: string) {
-await rolloverFreezes(userId);
+  await rolloverFreezes(userId);
+  const [u] = await db
+    .select({ timezone: users.timezone })
+    .from(users)
+    .where(eq(users.id, userId));
+  const tz = u?.timezone || "UTC";
   const rows = await db
     .select()
     .from(habitsT)
@@ -501,20 +512,20 @@ await rolloverFreezes(userId);
     .where(
       and(
         eq(habitCompletions.userId, userId),
-        gte(habitCompletions.date, isoDateNDaysAgo(364)),
+        gte(habitCompletions.date, localDateNDaysAgo(364, tz)),
       ),
     );
-  const today = todayIso();
+  const today = localTodayStr(tz);
   const habits = rows.map((r) => {
     const habit = rowToHabit(r);
     const myDates = new Set(
       completions.filter((c) => c.habitId === habit.id).map((c) => c.date),
     );
-    const { current, longest } = calcStreak(habit, myDates);
+    const { current, longest } = calcStreak(habit, myDates, tz);
     habit.currentStreak = current;
     habit.longestStreak = longest;
     const last30 = Array.from({ length: 30 }, (_, i) => {
-      const d = isoDateNDaysAgo(29 - i);
+      const d = localDateNDaysAgo(29 - i, tz);
       return { date: d, due: isHabitDueOn(habit, d), done: myDates.has(d) };
     });
     return {
@@ -884,9 +895,19 @@ export async function getAnalytics(userId: string) {
     yearHeatmap.push({ date: d, pct: Math.min(1, (completionsByDate.get(d) ?? 0) / 5) });
   }
 
+  // Bucket completions by hour-of-day in the user's tz, not the server's.
+  // Without this, on Railway (UTC) all "9am IST" completions land in the
+  // 03:30 bucket, distorting the "when you're most productive" insight.
   const hours = Array.from({ length: 24 }, () => 0);
+  const hourFmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    hour: "2-digit",
+    hour12: false,
+  });
   for (const c of taskCompletionRows) {
-    hours[new Date(c.completedAt).getHours()] += 1;
+    const parts = hourFmt.formatToParts(new Date(c.completedAt));
+    const h = Number(parts.find((p) => p.type === "hour")?.value ?? "0");
+    hours[h === 24 ? 0 : h] += 1;
   }
 
   const totalDone = taskCompletionRows.length;
@@ -976,6 +997,16 @@ const updates: Record<string, unknown> = {};
 
 export async function resetUser(userId: string): Promise<void> {
   // Wipe all activity for this user but keep their account + email/password.
+  // Seed times are written in the user's stored timezone so "7am" shows
+  // as 07:00 on their device, not 12:30 (UTC server bias).
+  const [u] = await db
+    .select({ timezone: users.timezone })
+    .from(users)
+    .where(eq(users.id, userId));
+  const tz = u?.timezone || "UTC";
+  const today = localTodayStr(tz);
+  const at = (h: number, m = 0) =>
+    localTimeToUtc(today, `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`, tz);
   await db.transaction(async (tx) => {
     await tx.delete(redemptionsT).where(eq(redemptionsT.userId, userId));
     await tx.delete(rewardLedger).where(eq(rewardLedger.userId, userId));
@@ -986,12 +1017,6 @@ export async function resetUser(userId: string): Promise<void> {
       .update(users)
       .set({ xp: 0, level: 1, streak: 0, lastCompletionDate: null })
       .where(eq(users.id, userId));
-    const now = new Date();
-    const at = (h: number, m = 0) => {
-      const d = new Date(now);
-      d.setHours(h, m, 0, 0);
-      return d;
-    };
     await tx.insert(tasksT).values([
       { userId, title: "Deep work — draft project brief", priority: 1, estimatedMinutes: 90, scheduledFor: at(9, 0) },
       { userId, title: "Workout (45m)", priority: 1, estimatedMinutes: 45, scheduledFor: at(7, 0) },

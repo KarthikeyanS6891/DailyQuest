@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowRight, Check, Loader2, X } from "lucide-react";
 import { signInAction, signUpAction } from "@/app/(auth)/actions";
@@ -37,6 +37,21 @@ export function AuthForm({
   const [error, setError] = useState<string | null>(initialError ?? null);
   const [pending, start] = useTransition();
   const [email, setEmail] = useState("");
+
+  // Drop a short-lived cookie with the browser's IANA timezone so signup
+  // flows (email + Google OAuth) can initialize user.timezone correctly
+  // AND seed starter task times in the user's local clock, not UTC.
+  useEffect(() => {
+    try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (tz) {
+        document.cookie = `dq_tz=${encodeURIComponent(tz)}; path=/; max-age=600; samesite=lax`;
+      }
+    } catch {
+      /* best-effort */
+    }
+  }, []);
+
   const [password, setPassword] = useState("");
   const [emailTouched, setEmailTouched] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);

@@ -10,6 +10,7 @@ import {
   getRequestOrigin,
   isGoogleConfigured,
 } from "@/lib/google-oauth";
+import { localTimeToUtc, todayInTz } from "@/store/memory";
 
 export const dynamic = "force-dynamic";
 
@@ -18,13 +19,24 @@ function monthIso() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-async function seedNewUser(userId: string) {
-  const now = new Date();
-  const at = (h: number, m = 0) => {
-    const d = new Date(now);
-    d.setHours(h, m, 0, 0);
-    return d;
-  };
+function readTzHintFromReq(req: NextRequest): string {
+  const tz = req.cookies.get("dq_tz")?.value;
+  if (!tz) return "UTC";
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return tz;
+  } catch {
+    return "UTC";
+  }
+}
+
+async function seedNewUser(userId: string, tz: string) {
+  // Scheduled times in the user's local clock — "7am" means 07:00 on their
+  // phone, not 07:00 UTC. tz comes from the dq_tz cookie that AuthForm
+  // dropped before the user clicked "Continue with Google".
+  const today = todayInTz(tz);
+  const at = (h: number, m = 0) =>
+    localTimeToUtc(today, `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`, tz);
   await db.insert(tasksT).values([
     { userId, title: "Deep work — draft project brief", priority: 1, estimatedMinutes: 90, scheduledFor: at(9, 0) },
     { userId, title: "Workout (45m)", priority: 1, estimatedMinutes: 45, scheduledFor: at(7, 0) },
@@ -128,15 +140,16 @@ export async function GET(req: NextRequest) {
     } else {
       userId = nanoid(21);
       userEmail = email;
+      const tz = readTzHintFromReq(req);
       await db.insert(users).values({
         id: userId,
         email,
         googleId: profile.sub,
         name: profile.name,
         avatarUrl: profile.picture,
-        timezone: "UTC",
+        timezone: tz,
       });
-      await seedNewUser(userId);
+      await seedNewUser(userId, tz);
     }
   }
 
