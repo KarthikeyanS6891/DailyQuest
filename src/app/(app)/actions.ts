@@ -21,15 +21,30 @@ const CreateInput = z.object({
   time: z.string().optional(),
 });
 
+// FormData.get returns `null` for missing keys. Zod's z.string().optional()
+// accepts `undefined` but NOT `null`, which was silently failing the whole
+// validation. Convert here so callers don't have to think about it.
+function asString(fd: FormData, key: string): string | undefined {
+  const v = fd.get(key);
+  return typeof v === "string" ? v : undefined;
+}
+
 export async function addTaskAction(formData: FormData) {
   const { id: userId } = await requireUser();
   const parsed = CreateInput.safeParse({
-    title: formData.get("title"),
-    priority: formData.get("priority"),
-    estimatedMinutes: formData.get("estimatedMinutes"),
-    time: formData.get("time"),
+    title: asString(formData, "title"),
+    priority: asString(formData, "priority"),
+    estimatedMinutes: asString(formData, "estimatedMinutes"),
+    time: asString(formData, "time"),
   });
-  if (!parsed.success) return { ok: false, error: parsed.error.message };
+  if (!parsed.success) {
+    // Surface the first issue so the UI can render it and we have a
+    // breadcrumb in server logs instead of a silent no-op.
+    const first = parsed.error.issues[0];
+    const error = first ? `${first.path.join(".")}: ${first.message}` : "Invalid input.";
+    console.error("[addTaskAction] validation failed:", error, parsed.error.issues);
+    return { ok: false as const, error };
+  }
   const { title, priority, estimatedMinutes, time } = parsed.data;
   let scheduledFor: string | null = null;
   if (time && /^\d{2}:\d{2}$/.test(time)) {
@@ -38,15 +53,20 @@ export async function addTaskAction(formData: FormData) {
     d.setHours(h, m, 0, 0);
     scheduledFor = d.toISOString();
   }
-  await createTask(userId, {
-    title,
-    priority: priority as Priority,
-    estimatedMinutes,
-    scheduledFor,
-  });
+  try {
+    await createTask(userId, {
+      title,
+      priority: priority as Priority,
+      estimatedMinutes,
+      scheduledFor,
+    });
+  } catch (e) {
+    console.error("[addTaskAction] createTask failed:", e);
+    return { ok: false as const, error: "Could not save the quest. Please try again." };
+  }
   revalidatePath("/");
   revalidatePath("/analytics");
-  return { ok: true };
+  return { ok: true as const };
 }
 
 export async function completeTaskAction(taskId: string) {

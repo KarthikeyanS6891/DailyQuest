@@ -26,6 +26,7 @@ export function QuickAdd() {
   const [phIdx, setPhIdx] = useState(0);
   const [pending, start] = useTransition();
   const [bursts, setBursts] = useState(0);
+  const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -44,13 +45,19 @@ export function QuickAdd() {
 
   const submit = () => {
     if (!effectiveTitle) return;
+    setError(null);
     const fd = new FormData();
     fd.set("title", effectiveTitle);
     fd.set("priority", String(effectivePriority));
     fd.set("estimatedMinutes", String(effectiveMinutes));
     if (effectiveTime) fd.set("time", effectiveTime);
     start(async () => {
-      await addTaskAction(fd);
+      const res = await addTaskAction(fd);
+      if (res && !res.ok) {
+        // Keep what the user typed so they can fix it; show the reason.
+        setError(res.error);
+        return;
+      }
       setText("");
       setPriority(2);
       setMinutes(25);
@@ -197,6 +204,21 @@ export function QuickAdd() {
           </span>
         </div>
       </motion.div>
+
+      <AnimatePresence>
+        {error ? (
+          <motion.div
+            key="quickadd-error"
+            initial={{ opacity: 0, y: -4, height: 0 }}
+            animate={{ opacity: 1, y: 0, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="mt-2 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger"
+            role="alert"
+          >
+            {error}
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
       <AnimatePresence>
         {Array.from({ length: bursts }).slice(-1).map((_, i) => (

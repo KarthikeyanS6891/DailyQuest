@@ -30,10 +30,15 @@ const priorityStyles: Record<Priority, string> = {
 
 const priorityLabel: Record<Priority, string> = { 1: "P1", 2: "P2", 3: "P3" };
 
+// Render in a stable format (HH:MM, 24h) regardless of locale — Node on
+// the server vs the browser otherwise return different strings (e.g.
+// "7:00" vs "7:00 AM"), which trips a React hydration mismatch.
 function formatTime(iso: string | null) {
   if (!iso) return "Anytime";
   const d = new Date(iso);
-  return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
 }
 
 export function TaskItem({ task }: { task: ClientTask }) {
